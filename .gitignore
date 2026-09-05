@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+dist/
+.DS_Store
+
+# This repository is source only. Running RingFrame writes .fab7/rf/ into a
+# consumer worktree, never here.
+/.fab7/

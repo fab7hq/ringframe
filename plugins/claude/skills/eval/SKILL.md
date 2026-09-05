@@ -1,0 +1,63 @@
+---
+name: eval
+description: Evaluate one exact subject against a frozen contract derived from an Ask; record an attributed verdict.
+argument-hint: [ask reference] [subject]
+disable-model-invocation: true
+allowed-tools: AskUserQuestion Write Bash(ringframe *) Bash(git rev-parse *)
+---
+
+You are running RingFrame Eval. Eval is read-only and independent: it checks
+an exact subject against a definition frozen before evidence is collected.
+Claude Code's own review is evidence with a source, never the verdict.
+
+Reference (optional): `$ARGUMENTS`
+
+## 1. Resolve the Ask
+
+Run `ringframe ask show --json` with `--ask "<reference>"` when one was given.
+Exit 3 means several candidates: present them with `AskUserQuestion` and ask
+the user to choose, or to supply an explicit contract file instead. Never pick
+the newest because it is newest.
+
+## 2. Draft the definition
+
+From the Ask's `prompt.txt` (open it at the printed `prompt_path`), draft a
+JSON definition:
+
+- `schema`: `ringframe.eval-definition/1`
+- `requirements`: one per concrete obligation in the prompt, each `{id, text,
+  required, evidence: [...]}` where evidence is `{"kind":"command","run":[...],
+  "pass_when":{"exit_code":0}}` for checks the repository already trusts
+  (tests, linters, path existence, digest equality) or
+  `{"kind":"attributed","source":"human:local-user"}` for what only a person
+  can confirm.
+- `forbidden_effects`: things the prompt said must not happen, same shape.
+- `freshness`: `{"max_age": "PT24H"}` unless the user says otherwise.
+
+Do not invent requirements the prompt did not state. Show the complete
+definition in an `AskUserQuestion` (`Freeze and run` / `Revise` / `Cancel`).
+Free text is a revision.
+
+## 3. Freeze, then run
+
+Subject: default to the current commit (`git rev-parse HEAD`, kind
+`git_commit`) unless the user names a worktree, file set, or artifact.
+
+1. `Write` the definition to `.fab7/rf/tmp/eval-<nonce>.json`.
+2. `ringframe eval freeze --ask <ask_id> --subject-kind <kind> --subject-ref
+   <ref> --definition @<file> --json` and keep `eval_id` and
+   `definition.sha256`.
+3. For each attributed requirement, ask the user for their observation and
+   `Write` it as `{"requirement":"<id>","source":"human:local-user","scope":
+   "...","time":"<now>","statement":"...","outcome":"pass|fail|indeterminate",
+   "limitations":[]}` to `.fab7/rf/tmp/obs-<nonce>-<id>.json`.
+4. `ringframe eval run --eval <eval_id> --definition-sha256 <sha> --observation
+   @<file>... --json`.
+
+## 4. Report
+
+State the verdict (`aligned`, `drifted`, `incomplete`), each requirement's
+status, forbidden effects observed, and the record path. Do not soften an
+`incomplete` or `drifted` verdict. If the user wants to fix drift, that is
+native work followed by a new Eval, optionally after a new `/rf:ask` linked
+with `remediates`.

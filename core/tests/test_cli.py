@@ -1,0 +1,144 @@
+import io
+import json
+import os
+import subprocess
+import sys
+
+import pytest
+
+from ringframe import cli
+from tests.test_eval import definition, head
+
+CLS = json.dumps({"task": ["plan"], "result": "plan", "interaction": "approval_gated", "horizon": "session", "effects": ["read"]})
+ROUTE = json.dumps({"fits": "f", "alternatives": [], "continuation": "c", "effects": "e", "gaps": []})
+
+
+def run(repo, *args, stdin=None, monkeypatch=None):
+    out, err = io.StringIO(), io.StringIO()
+    if stdin is not None:
+        monkeypatch.setattr(sys, "stdin", io.StringIO(stdin))
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(sys, "stderr", err)
+    code = cli.main(["--workspace", str(repo), *args])
+    text = out.getvalue()
+    return code, (json.loads(text) if text.strip().startswith("{") else text), err.getvalue()
+
+
+def host(session="s1"):
+    return json.dumps({"name": "claude-code", "version": "2.1.260", "surface": "native-tui", "session_ref": session})
+
+
+def staged(repo, name="stage-1"):
+    d = repo / ".fab7/rf/tmp" / name
+    d.mkdir(parents=True)
+    (d / "source.txt").write_bytes(b"fix login\n")
+    (d / "prompt.txt").write_bytes(b"Fix login.\n")
+    return str(d)
+
+
+def confirm(repo, mp, **kw):
+    cap = kw.get("capability", "native_plan")
+    return run(repo, "ask", "confirm", "--staged", staged(repo, kw.get("stage", "stage-1")), "--title", kw.get("title", "Login"),
+               "--capability", cap, "--classification", CLS, "--route", ROUTE, "--host", host(kw.get("session", "s1")), "--json", monkeypatch=mp)
+
+
+def test_init_and_profile_show(repo, monkeypatch):
+    code, out, _ = run(repo, "init", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["rf_dir"].endswith(".fab7/rf") and (repo / ".fab7/rf/.gitignore").exists()
+    code, out, _ = run(repo, "profile", "show", "--host", "claude-code", "--version", "2.1.260", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["profile_id"] == "claude-code@2.1" and len(out["sha256"]) == 64
+    code, out, _ = run(repo, "profile", "show", "--host", "cursor", "--json", monkeypatch=monkeypatch)
+    assert out["profile_id"] == "unknown"
+
+
+def test_ask_confirm_show_delivery_flow(repo, monkeypatch):
+    payload = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s1", "prompt": "/rf:ask fix login", "cwd": str(repo)})
+    code, out, _ = run(repo, "sessions", "capture", "--host", "claude-code", "--json", stdin=payload, monkeypatch=monkeypatch)
+    assert code == 0 and out["captured"] is True
+    code, out, _ = confirm(repo, monkeypatch)
+    assert code == 0 and set(out) == {"ask_id", "source", "prompt", "prompt_path", "delivery_mode", "source_verified"} and out["source_verified"] == "exact"
+    ask_id = out["ask_id"]
+    hook = json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1", "tool_name": "EnterPlanMode", "tool_use_id": "t1", "tool_response": {"ok": 1}})
+    code, out, _ = run(repo, "ask", "delivery", "--from-hook", "--json", stdin=hook, monkeypatch=monkeypatch)
+    assert code == 0 and out["recorded"] is True and out["state"] == "native_accepted"
+    code, out, _ = run(repo, "ask", "delivery", "--from-hook", "--json", stdin=hook, monkeypatch=monkeypatch)
+    assert code == 0 and out["recorded"] is False  # never fails the host turn
+    code, out, _ = run(repo, "ask", "show", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["ask_id"] == ask_id and out["delivery"] == "native_accepted"
+    code, out, _ = run(repo, "ledger", "verify", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out == {"findings": [], "clean": True}
+
+
+def test_ask_handoff_state_and_resolution_exit_codes(repo, monkeypatch):
+    code, a, _ = confirm(repo, monkeypatch)
+    code, out, _ = run(repo, "ask", "delivery", "--ask", a["ask_id"], "--handoff", monkeypatch=monkeypatch)
+    assert code == 0 and "prompt.txt" in out and "Claude Code TUI" in out
+    code, out, err = run(repo, "ask", "delivery", "--ask", a["ask_id"], "--state", "unavailable", "--reason", "x", "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out["error"] == "delivery.duplicate"
+    code, b, _ = confirm(repo, monkeypatch, stage="stage-2", title="Logout", session="s2", capability="native_direct")
+    code, out, _ = run(repo, "ask", "show", "--json", monkeypatch=monkeypatch)
+    assert code == 3 and out["needs_input"] == "chooser" and {c["id"] for c in out["candidates"]} == {a["ask_id"], b["ask_id"]}
+    code, out, _ = run(repo, "ask", "resolve", "--session", "s2", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["rule_applied"] == "same_session" and out["candidates"][0]["id"] == b["ask_id"]
+    code, out, _ = run(repo, "ask", "show", "--ask", "Logout", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["ask_id"] == b["ask_id"]
+
+
+def test_ask_cancel_and_usage_errors(repo, monkeypatch):
+    code, out, _ = run(repo, "ask", "cancel", "--staged", staged(repo), "--title", "t", "--capability", "native_plan", "--classification", CLS,
+                       "--route", ROUTE, "--host", host(), "--reason", "nah", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and "delivery_mode" not in out
+    code, out, err = run(repo, "ask", "confirm", "--staged", "/nope", "--title", "t", "--capability", "native_plan", "--classification", CLS,
+                         "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out["error"] == "ask.staged_dir"
+    with pytest.raises(SystemExit) as e:
+        run(repo, "ask", "confirm", monkeypatch=monkeypatch)
+    assert e.value.code == 1
+    code, out, _ = run(repo, "ask", "confirm", "--staged", staged(repo, "s3"), "--title", "t", "--capability", "native_plan",
+                       "--classification", "{not json", "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+    assert code == 1 and out["error"] == "usage"
+
+
+def test_eval_and_seal_cli(repo, monkeypatch, tmp_path):
+    d = tmp_path / "def.json"
+    d.write_text(json.dumps(definition()))
+    obs = tmp_path / "obs.json"
+    obs.write_text(json.dumps({"requirement": "R2", "source": "human:local-user", "scope": "s", "time": "t", "statement": "ok", "outcome": "pass", "limitations": []}))
+    code, out, _ = run(repo, "eval", "freeze", "--subject-kind", "git_commit", "--subject-ref", head(repo), "--definition", f"@{d}", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and set(out) == {"eval_id", "definition"}
+    code, rec, _ = run(repo, "eval", "run", "--eval", out["eval_id"], "--definition-sha256", out["definition"]["sha256"], "--observation", f"@{obs}", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and rec["verdict"] == "aligned"
+    code, out2, _ = run(repo, "eval", "run", "--eval", out["eval_id"], "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out2["error"] == "ledger.immutable"
+    code, receipt, _ = run(repo, "seal", "create", "--eval", rec["eval_id"], "--disposition", "accepted", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and receipt["disposition"] == "accepted"
+    code, out, _ = run(repo, "seal", "create", "--eval", rec["eval_id"], "--disposition", "accepted", "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out["error"] == "seal.refused" and out["refusal_codes"] == ["seal.duplicate"]
+    code, out, _ = run(repo, "seal", "check", "--seal", receipt["seal_id"], "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["fresh"] is True
+    (repo / "README.md").write_text("changed\n")
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "change"], check=True)
+    code, out, _ = run(repo, "seal", "check", "--seal", receipt["seal_id"], "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["fresh"] is True  # git_commit subject is pinned to the old commit's tree
+    code, out, _ = run(repo, "seal", "check", "--seal", "sel_nope", "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out["fresh"] is False
+    with pytest.raises(SystemExit) as e:
+        run(repo, "seal", "create", "--eval", rec["eval_id"], "--disposition", "shipped", "--json", monkeypatch=monkeypatch)
+    assert e.value.code == 1
+
+
+def test_export_and_prune(repo, monkeypatch, tmp_path):
+    code, a, _ = confirm(repo, monkeypatch)
+    code, out, _ = run(repo, "export", "--ask", a["ask_id"], "--out", str(tmp_path / "x.tar"), "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["files"] == 3
+    import tarfile
+    names = tarfile.open(tmp_path / "x.tar").getnames()
+    assert any(n.endswith("prompt.txt") for n in names) and any(n.endswith("ledger.jsonl") for n in names)
+    code, out, _ = run(repo, "sessions", "prune", "--older-than", "7d", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["removed"] == []
+
+
+def test_module_entrypoint_and_version():
+    cp = subprocess.run([sys.executable, "-m", "ringframe", "--version"], capture_output=True, text=True,
+                        env={**os.environ, "PYTHONPATH": "core"})
+    assert cp.returncode == 0 and cp.stdout.strip() == "ringframe 0.0.1"

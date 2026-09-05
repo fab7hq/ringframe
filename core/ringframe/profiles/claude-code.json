@@ -1,0 +1,37 @@
+{
+  "schema": "ringframe.profile/1",
+  "profile_id": "claude-code@2.1",
+  "host": "claude-code",
+  "version_range": ">=2.1.260 <2.2",
+  "surface": "native-tui",
+  "invocation_prefix": "/rf:",
+  "capabilities": [
+    {
+      "id": "native_plan",
+      "purpose": "read-only exploration and a reviewable plan before effects",
+      "activation": {"mechanism": "capability_activate", "tool": "EnterPlanMode"},
+      "confirmation": {"tool": "AskUserQuestion"},
+      "continuation": "host presents plan review via ExitPlanMode; approval continues to implementation under host permissions",
+      "effects": ["workspace_read"],
+      "permission_owner": "host",
+      "delivery_mode": "native_dispatch",
+      "receipt": {"captured_by": "hook:PostToolUse", "tool": "EnterPlanMode"},
+      "qualification": {"id": "ringframe-ask-plan-q04", "stratum": "agent-sdk", "tui": "ringframe-ask-confirm-tui-q02 (feasibility only)"},
+      "limitations": ["ToolSearch denial blocks discovery of EnterPlanMode", "native acceptance is not execution or completion"]
+    },
+    {
+      "id": "native_direct",
+      "purpose": "continue immediately under normal permissions",
+      "activation": {"mechanism": null, "tool": null},
+      "confirmation": {"tool": "AskUserQuestion"},
+      "continuation": "same turn",
+      "effects": ["per source intent"],
+      "permission_owner": "host",
+      "delivery_mode": "native_dispatch",
+      "receipt": null,
+      "qualification": {"id": null},
+      "limitations": ["no delivery receipt exists for same-turn continuation"]
+    }
+  ],
+  "fallback": "human_handoff"
+}
