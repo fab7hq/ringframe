@@ -50,15 +50,31 @@ the exact intent and adding only instructions that earn their place. Then:
 1. Write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
    `.fab7/rf/tmp/stage-<nonce>/prompt.txt` (the compiled prompt, with the
    `/plan ` or `/goal ` prefix when required, nothing else).
-2. Run `ringframe ask compile --staged <dir> --title "<short title>"
+2. Only after both files exist, run one command:
+   `ringframe ask compile --staged <dir> --title "<short title>"
    --capability <id> --classification '<json>' --route '<json>' --host
-   '{"name":"codex","surface":"native-tui"}' --json`. Vocabulary: `task` from
-   `question research clarify plan implement diagnose review operate
-   document`; `result` from `answer plan workspace_change evidence
-   continuing_objective`; `interaction` `interactive|approval_gated`; `horizon`
-   `one_turn|session|persistent`; `effects` from `read write execute
-   external_effect`. Route keys: `fits`, `alternatives`, `continuation`,
-   `effects`, `gaps`, `explicit_direct_request`. Keep the returned `ask_id`.
+   '{"name":"codex","surface":"native-tui"}' --json`. Keep the returned
+   `ask_id`. If it exits non-zero, read the `error` and `detail`, fix that one
+   thing, and run it again; never run `--help`.
+
+   `--classification` has exactly these keys and shapes (lists stay lists,
+   strings stay strings):
+
+   ~~~json
+   {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}
+   ~~~
+
+   `task` items from `question research clarify plan implement diagnose review
+   operate document`; `result` one of `answer plan workspace_change evidence
+   continuing_objective`; `interaction` one of `interactive approval_gated`;
+   `horizon` one of `one_turn session persistent`; `effects` items from `read
+   write execute external_effect`.
+
+   `--route` has exactly these keys:
+
+   ~~~json
+   {"fits": "<why this capability fits>", "alternatives": [{"capability": "native_direct", "reason": "<why not>"}], "continuation": "<what happens after confirmation>", "effects": "<effects in words>", "gaps": [], "explicit_direct_request": false}
+   ~~~
 
 ## 3. Confirm with the native tool
 

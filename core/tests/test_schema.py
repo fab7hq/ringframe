@@ -65,3 +65,17 @@ def test_confirmed_cancelled_and_submission_are_graded_observations():
         schema.validate_event({**BASE, "type": "ask.submission", "data": {"state": "probably", "observed_by": None, "attributed_by": "human:x", "as_modified": False, "host": {}, "prompt_sha256": "a" * 64}})
     with pytest.raises(LedgerError, match="data.confirmation"):
         schema.validate_event({**BASE, "type": "ask.confirmed", "data": {}})
+
+
+@pytest.mark.parametrize("field,value,expect", [
+    ("task", "implement", "task must be a list"),                 # string where a list belongs: never iterate its characters
+    ("result", ["workspace_change"], "result must be one of"),   # list where a string belongs: never an internal TypeError
+    ("effects", "write", "effects must be a list"),
+    ("horizon", None, "horizon must be one of"),
+])
+def test_wrong_shapes_report_the_expected_shape_not_an_internal_error(field, value, expect):
+    ev = cancelled()
+    ev["data"]["classification"][field] = value
+    with pytest.raises(LedgerError) as e:
+        schema.validate_event(ev)
+    assert e.value.code == "ledger.schema" and expect in e.value.detail

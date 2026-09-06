@@ -40,18 +40,8 @@ def _fail(path, why="missing"):
 
 
 def _enum(path, key, value):
-    allowed = sorted(v for v in ENUMS[key] if v is not None)
-    if not isinstance(value, (str, type(None))):
-        _fail(path, f"must be one of {allowed}, got {type(value).__name__}")
     if value not in ENUMS[key]:
-        _fail(path, f"must be one of {allowed}, got {value!r}")
-
-
-def _enum_list(path, key, values):
-    if not isinstance(values, list):
-        _fail(path, f"must be a list from {sorted(ENUMS[key])}, got {type(values).__name__}")
-    for v in values:
-        _enum(f"{path}[]", key, v)
+        _fail(path, f"not in {sorted(v for v in ENUMS[key] if v is not None)}")
 
 
 def _ref(path, ref):
@@ -87,10 +77,12 @@ def validate_event(ev: dict) -> None:
         for k in ("task", "result", "interaction", "horizon", "effects"):
             if k not in c:
                 _fail(f"data.classification.{k}")
-        _enum_list("data.classification.task", "classification.task[]", c["task"])
+        for t in c["task"]:
+            _enum("data.classification.task[]", "classification.task[]", t)
         for k in ("result", "interaction", "horizon"):
             _enum(f"data.classification.{k}", f"classification.{k}", c[k])
-        _enum_list("data.classification.effects", "classification.effects[]", c["effects"])
+        for e in c["effects"]:
+            _enum("data.classification.effects[]", "classification.effects[]", e)
         for k in ("name", "version", "surface", "session_ref", "workspace", "profile_id", "profile_sha256"):
             if k not in data["host"]:
                 _fail(f"data.host.{k}")
