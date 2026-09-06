@@ -90,8 +90,12 @@ When the interaction ends with a final candidate:
 2. Run, via `Bash`, `ringframe ask confirm` (or `ringframe ask cancel
    --reason "<why>"`) with `--staged <that directory>`, `--title "<short
    human title>"`, `--capability native_plan|native_direct`,
-   `--classification '<json>'` with keys `task` (list), `result`,
-   `interaction`, `horizon`, `effects` (list), `--route '<json>'` with keys
+   `--classification '<json>'` using exactly this vocabulary: `task` is a
+   list from `question research clarify plan implement diagnose review operate
+   document`; `result` is one of `answer plan workspace_change evidence
+   continuing_objective`; `interaction` is `interactive` or `approval_gated`;
+   `horizon` is `one_turn`, `session`, or `persistent`; `effects` is a list
+   from `read write execute external_effect`. `--route '<json>'` with keys
    `fits`, `alternatives` (list of `{capability, reason}`), `continuation`,
    `effects`, `gaps` (list), `--host '{"name":"claude-code","surface":"native-tui"}'`,
    and `--json`. Do not guess a version or session id: the CLI takes both from

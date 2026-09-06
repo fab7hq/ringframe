@@ -69,6 +69,22 @@ def test_confirm_rejects_bad_staging_and_unknown_capability(repo):
     assert store.events(ws) == [] and (d / "source.txt").exists()
 
 
+def test_invalid_classification_publishes_nothing(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    bad = {**CLS, "task": ["add-endpoint"]}
+    with pytest.raises(LedgerError, match="classification.task"):
+        confirm(ws, classification=bad)
+    assert not list((ws.rf_dir / "asks").iterdir()) and store.events(ws) == [] and store.verify(ws) == []
+    assert (ws.rf_dir / "tmp" / "stage-1" / "source.txt").exists()  # staging survives for a retry
+
+
+def test_hyphenated_vocabulary_is_accepted(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = confirm(ws, classification={**CLS, "interaction": "approval-gated", "horizon": "one-turn"})
+    c = store.events(ws)[0]["data"]["classification"]
+    assert c["interaction"] == "approval_gated" and c["horizon"] == "one_turn" and store.verify(ws) == []
+
+
 def test_unknown_host_falls_back_to_handoff(repo):
     ws = workspace.resolve(cwd=repo).ensure()
     out = confirm(ws, host={"name": "cursor", "version": "1.0", "surface": "cli", "session_ref": None}, capability="human_handoff")

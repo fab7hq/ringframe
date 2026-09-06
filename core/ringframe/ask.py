@@ -34,6 +34,14 @@ def _actor(actor):
     return actor or {"kind": "human", "id": "local-user", "authority": "interactive"}
 
 
+def _normalize_classification(c) -> dict:
+    """Accept `approval-gated` for `approval_gated`; the vocabulary itself is unchanged."""
+    if not isinstance(c, dict):
+        return c
+    fix = lambda v: v.replace("-", "_") if isinstance(v, str) else v
+    return {k: [fix(x) for x in v] if isinstance(v, list) else fix(v) for k, v in c.items()}
+
+
 def _staged(staged: Path) -> tuple[bytes, bytes]:
     names = sorted(p.name for p in Path(staged).iterdir()) if Path(staged).is_dir() else None
     if names != ["prompt.txt", "source.txt"]:
@@ -50,6 +58,7 @@ def _staged(staged: Path) -> tuple[bytes, bytes]:
 
 def _persist(ws, type_, staged, title, capability, classification, route, host, links, limitations, actor, extra):
     source, prompt = _staged(staged)
+    classification = _normalize_classification(classification)
     host = dict(host)
     provenance = {}
     if not host.get("session_ref"):
@@ -68,8 +77,9 @@ def _persist(ws, type_, staged, title, capability, classification, route, host, 
     if profile["profile_id"] == "unknown":
         limitations.append("qualification gap: no profile for this host and version")
     ask_id = ids.new_id("ask")
-    source_ref = store.publish(ws, f"asks/{ask_id}/source.txt", source, role="source_intent")
-    prompt_ref = store.publish(ws, f"asks/{ask_id}/prompt.txt", prompt, role="generated_prompt")
+    # Provisional references let the event be validated before anything is written.
+    source_ref = {"role": "source_intent", "path": f"asks/{ask_id}/source.txt", "bytes": len(source), "sha256": digest.sha256_bytes(source)}
+    prompt_ref = {"role": "generated_prompt", "path": f"asks/{ask_id}/prompt.txt", "bytes": len(prompt), "sha256": digest.sha256_bytes(prompt)}
     verified, reason = sessions.source_verified(ws, host["name"], host.get("session_ref"), source)
     if reason:
         limitations.append(f"source_verified unverified: {reason}")
@@ -82,6 +92,8 @@ def _persist(ws, type_, staged, title, capability, classification, route, host, 
         data["delivery_mode"] = cap["delivery_mode"]
     ev = _event(type_, ask_id, _actor(actor), data, links)
     schema.validate_event(ev)
+    assert store.publish(ws, source_ref["path"], source, role="source_intent") == source_ref
+    assert store.publish(ws, prompt_ref["path"], prompt, role="generated_prompt") == prompt_ref
     store.append(ws, ev)
     shutil.rmtree(staged)
     return {"ask_id": ask_id, "source": source_ref, "prompt": prompt_ref, "prompt_path": str(ws.rf_dir / prompt_ref["path"]),
