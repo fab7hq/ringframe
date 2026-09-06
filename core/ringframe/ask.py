@@ -73,6 +73,10 @@ def _persist(ws, type_, staged, title, capability, classification, route, host, 
     cap = profiles.capability(profile, capability)
     if cap is None:
         raise LedgerError("ask.capability", f"{capability!r} is not in profile {profile['profile_id']}")
+    gated = set(cap.get("requires_explicit_request_for_effects", [])) & set(classification.get("effects", []))
+    if gated and route.get("explicit_direct_request") is not True:
+        raise LedgerError("ask.route_policy", f"{capability} with effects {sorted(gated)} requires route.explicit_direct_request=true, "
+                          "which is only true when the source intent itself asks to skip planning or act immediately; otherwise select native_plan")
     limitations = list(limitations or []) + list(cap.get("limitations", []))
     if profile["profile_id"] == "unknown":
         limitations.append("qualification gap: no profile for this host and version")

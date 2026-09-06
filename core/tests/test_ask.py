@@ -69,6 +69,19 @@ def test_confirm_rejects_bad_staging_and_unknown_capability(repo):
     assert store.events(ws) == [] and (d / "source.txt").exists()
 
 
+def test_direct_route_with_effects_needs_explicit_request(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    with pytest.raises(LedgerError, match="ask.route_policy"):
+        confirm(ws, capability="native_direct", classification={**CLS, "effects": ["write"]})
+    assert store.events(ws) == [] and not list((ws.rf_dir / "asks").iterdir())
+    out = confirm(ws, capability="native_direct", classification={**CLS, "effects": ["write"]}, route={**ROUTE, "explicit_direct_request": True})
+    assert out["delivery_mode"] == "native_dispatch"
+    (ws.rf_dir / "tmp" / "stage-2").mkdir()
+    (ws.rf_dir / "tmp" / "stage-2" / "source.txt").write_bytes(b"what does auth.ts do?")
+    (ws.rf_dir / "tmp" / "stage-2" / "prompt.txt").write_bytes(b"Explain auth.ts.")
+    ask.confirm(ws, staged=ws.rf_dir / "tmp" / "stage-2", title="Q", capability="native_direct", classification={**CLS, "task": ["question"], "result": "answer", "effects": ["read"]}, route=ROUTE, host=HOST)
+
+
 def test_invalid_classification_publishes_nothing(repo):
     ws = workspace.resolve(cwd=repo).ensure()
     bad = {**CLS, "task": ["add-endpoint"]}

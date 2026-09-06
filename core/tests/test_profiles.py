@@ -27,3 +27,4 @@ def test_capability_lookup():
     cap = profiles.capability(p, "native_plan")
     assert cap["activation"]["tool"] == "EnterPlanMode" and cap["delivery_mode"] == "native_dispatch"
     assert profiles.capability(p, "native_goal") is None
+    assert "write" in profiles.capability(p, "native_direct")["requires_explicit_request_for_effects"]

@@ -37,11 +37,16 @@ Classify only what routing needs: task and result; interactive or
 approval-gated; one-turn, session, or persistent horizon; read, write,
 execute, or external effects. Then select one capability from this profile:
 
-- `native_plan`: bounded, non-trivial work that requests material effects and
-  benefits from reviewing an approach before those effects. Claude Code will
-  enter Plan mode, research read-only, and present its native plan review.
-- `native_direct`: a small clear task, or the user explicitly asks to skip the
-  planning boundary. Work continues in this turn under normal permissions.
+- `native_plan`: any intent whose effects include `write`, `execute`, or
+  `external_effect` (new code, tests, files, commands), unless the source
+  intent itself says to skip planning or to do it immediately. Claude Code
+  will enter Plan mode, research read-only, and present its native plan
+  review. Size is not the criterion; a review boundary before effects is.
+- `native_direct`: read-only or answer-only intents, or an intent that
+  explicitly asks to skip planning or act now. Work continues in this turn
+  under normal permissions. When you select it for an intent with effects,
+  set `"explicit_direct_request": true` in `--route`; the CLI refuses
+  `native_direct` with effects otherwise, and you then select `native_plan`.
 
 Claude Code exposes no persistent goal capability on this surface; do not
 offer one.
@@ -97,7 +102,8 @@ When the interaction ends with a final candidate:
    `horizon` is `one_turn`, `session`, or `persistent`; `effects` is a list
    from `read write execute external_effect`. `--route '<json>'` with keys
    `fits`, `alternatives` (list of `{capability, reason}`), `continuation`,
-   `effects`, `gaps` (list), `--host '{"name":"claude-code","surface":"native-tui"}'`,
+   `effects`, `gaps` (list), and `explicit_direct_request` (boolean, true only
+   when the source intent asks to skip planning or act immediately), `--host '{"name":"claude-code","surface":"native-tui"}'`,
    and `--json`. Do not guess a version or session id: the CLI takes both from
    the plugin hook's capture of this very invocation.
 3. If the command exits non-zero, show its error text and stop.
