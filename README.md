@@ -31,8 +31,8 @@ codex plugin add rf@ringframe
 ~~~
 
 The plugin's skills and hooks call `ringframe`; without it they do nothing.
-The Codex adapter is implemented and unit-tested but not yet qualified on a
-real Codex session (see `docs/architecture/codex.md`).
+On Codex, RingFrame compiles and confirms; you paste the prompt (see
+`docs/architecture/codex.md` for the qualified tuple and its limits).
 
 ## Use
 

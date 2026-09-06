@@ -34,12 +34,14 @@ feature prerequisite, the prompt prefixes, the goal length limit, and that
 `native_direct` with write, execute, or external effects needs an explicit
 request in the route.
 
-Status: implemented and covered by unit tests (`core/tests/test_plugin.py`,
-`test_profiles.py`, `test_ask.py`, `test_sessions.py`), **not qualified**.
-Confirmed without model calls on codex-cli 0.153.4: the plugin installs from
-this repository's marketplace, the three skills are listed, and the bundled
-hook is discovered (untrusted until trusted). Still open for the Codex
-qualification: whether `request_user_input` is available to the skill with the
-feature enabled, and whether the `$rf:ask` invocation reaches the hook with the
-exact bytes. Until that qualification passes, treat Codex as unsupported and
-expect human handoff with unobserved submission.
+Qualified host tuple: Codex CLI 0.153.4 through the app-server,
+`gpt-5.6-terra` at low effort, plugin hook trusted, feature
+`default_mode_request_user_input` enabled (`ringframe-ask-codex-q05`: three of
+three attempts compiled the exact intent before the chooser, confirmed through
+`request_user_input`, recorded a `handoff_ready` delivery with no submission
+claim, clean ledger, no project write). The hook capture proved the `$rf:ask`
+bytes reached the CLI in every attempt. Not covered by that qualification: the
+visible TUI, the observed submission after a human paste, revision and cancel
+branches, and prompt quality. Other Codex versions degrade to the unknown
+profile and human handoff. Unit tests: `core/tests/test_plugin.py`,
+`test_profiles.py`, `test_ask.py`, `test_sessions.py`.
