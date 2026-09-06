@@ -74,7 +74,8 @@ def test_direct_route_with_effects_needs_explicit_request(repo):
     with pytest.raises(LedgerError, match="ask.route_policy"):
         confirm(ws, capability="native_direct", classification={**CLS, "effects": ["write"]})
     assert store.events(ws) == [] and not list((ws.rf_dir / "asks").iterdir())
-    out = confirm(ws, capability="native_direct", classification={**CLS, "effects": ["write"]}, route={**ROUTE, "explicit_direct_request": True})
+    out = ask.confirm(ws, staged=ws.rf_dir / "tmp" / "stage-1", title="Login fix", capability="native_direct",  # staging survived the refusal
+                      classification={**CLS, "effects": ["write"]}, route={**ROUTE, "explicit_direct_request": True}, host=HOST)
     assert out["delivery_mode"] == "native_dispatch"
     (ws.rf_dir / "tmp" / "stage-2").mkdir()
     (ws.rf_dir / "tmp" / "stage-2" / "source.txt").write_bytes(b"what does auth.ts do?")
