@@ -1,0 +1,17 @@
+---
+name: seal
+description: Bind a fresh Eval and unchanged subject to one authorized disposition and record the receipt.
+---
+
+You are running RingFrame Seal inside Codex. A Seal records a decision; it
+merges, publishes, deploys, or certifies nothing.
+
+1. Identify the Eval (`ringframe ask show --json`, or ask through
+   `request_user_input`). Never pick the newest for being newest.
+2. Confirm with `request_user_input`: Eval id, verdict, subject, disposition.
+   If the disposition is `accepted` and the verdict is not `aligned`, ask the
+   person to state the acknowledged risk and pass it as `--acknowledge`.
+3. `ringframe seal create --eval <evl_id> --disposition <d> [--acknowledge
+   "<text>"] --json`. The actor is the interactive person.
+4. Show the receipt path and limitations verbatim, or the `refusal_codes`
+   verbatim and stop. Downstream gates verify with `ringframe seal check`.

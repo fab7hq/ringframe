@@ -34,6 +34,25 @@ def _actor(actor):
     return actor or {"kind": "human", "id": "local-user", "authority": "interactive"}
 
 
+def _authorized(ws, actor, capability, effects) -> dict:
+    """Interactive humans act by being present. Any other actor needs a pre-authorization record (ADR-0004)."""
+    import json
+    if actor["kind"] == "human" and actor.get("authority", "interactive") == "interactive":
+        return actor
+    path = ws.rf_dir / "authorizations" / f"{actor['id']}.json"
+    if not path.exists():
+        raise NeedsInput(f"authorization required: no record at authorizations/{actor['id']}.json for {actor['kind']}:{actor['id']}", [])
+    grant = json.loads(path.read_text())
+    allowed = grant.get("allowed", {})
+    from datetime import datetime, timezone
+    expired = grant.get("expires") and datetime.fromisoformat(str(grant["expires"]).replace("Z", "+00:00")) <= datetime.now(timezone.utc)
+    ok = grant.get("actor") == f"{actor['kind']}:{actor['id']}" and capability in allowed.get("capabilities", []) \
+        and set(effects) <= set(allowed.get("effects", [])) and not expired
+    if not ok:
+        raise NeedsInput(f"authorization does not cover {capability} with effects {sorted(effects)} for {actor['kind']}:{actor['id']}", [])
+    return {**actor, "authority": f"preauthorized:authorizations/{actor['id']}.json"}
+
+
 def _normalize_classification(c) -> dict:
     """Accept `approval-gated` for `approval_gated`; the vocabulary itself is unchanged."""
     if not isinstance(c, dict):
@@ -78,6 +97,13 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
     if gated and route.get("explicit_direct_request") is not True:
         raise LedgerError("ask.route_policy", f"{capability} with effects {sorted(gated)} requires route.explicit_direct_request=true, "
                           "which is only true when the source intent itself asks to skip planning or act immediately; otherwise select native_plan")
+    text = prompt.decode("utf-8")
+    prefix = cap.get("prompt_prefix")
+    if prefix and not text.startswith(prefix):
+        raise LedgerError("ask.prompt_prefix", f"{capability} on {host['name']} requires prompt.txt to begin with {prefix!r}")
+    if cap.get("max_prompt_chars") and len(text.rstrip("\n")) > cap["max_prompt_chars"]:
+        raise LedgerError("ask.prompt_too_long", f"{capability} on {host['name']} allows at most {cap['max_prompt_chars']} characters")
+    actor = _authorized(ws, _actor(actor), capability, classification.get("effects", []))
     limitations = list(limitations or []) + list(cap.get("limitations", []))
     if profile["profile_id"] == "unknown":
         limitations.append("qualification gap: no profile for this host and version")
@@ -94,7 +120,7 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
                      "profile_id": profile["profile_id"], "profile_sha256": profiles.sha256(profile["profile_id"].split("@")[0] if profile["host"] else "unknown")},
             "source": source_ref, "prompt": prompt_ref, "source_verified": verified, "limitations": limitations,
             "delivery_mode": cap["delivery_mode"]}
-    ev = _event("ask.compiled", ask_id, _actor(actor), data, links)
+    ev = _event("ask.compiled", ask_id, actor, data, links)
     schema.validate_event(ev)
     assert store.publish(ws, source_ref["path"], source, role="source_intent") == source_ref
     assert store.publish(ws, prompt_ref["path"], prompt, role="generated_prompt") == prompt_ref
@@ -116,7 +142,10 @@ def confirm(ws, ask_id: str, actor=None) -> dict:
     rec = _record(ws, ask_id)
     if rec["confirmed"]:
         raise LedgerError("ask.already_confirmed", ask_id)
-    return _append(ws, "ask.confirmed", ask_id, {"confirmation": {"observed_by": "skill", "surface": "AskUserQuestion"}}, actor)
+    d = rec["compiled"]["data"]
+    actor = _authorized(ws, _actor(actor), d["selected_capability"], d["classification"].get("effects", []))
+    surface = profiles.for_host(d["host"]).get("confirmation", {}).get("tool", "AskUserQuestion")
+    return _append(ws, "ask.confirmed", ask_id, {"confirmation": {"observed_by": "skill", "surface": surface}}, actor)
 
 
 def cancel(ws, ask_id: str, reason=None, actor=None, attributed=False) -> dict:

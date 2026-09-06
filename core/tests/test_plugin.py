@@ -91,3 +91,19 @@ def test_hooks_drive_capture_and_delivery_end_to_end(repo, tmp_path):
     assert _hook("record-delivery.sh", post, repo, path).returncode == 0
     shown = json.loads(subprocess.run(["ringframe", "ask", "show", "--json"], cwd=repo, capture_output=True, text=True, env={**os.environ, "PATH": path}, check=True).stdout)
     assert shown["delivery"] == "native_accepted" and shown["ask_id"] == confirmed["ask_id"]
+
+
+def test_codex_plugin_and_marketplace_manifests():
+    codex = ROOT / "plugins" / "codex"
+    plugin = json.loads((codex / ".codex-plugin/plugin.json").read_text())
+    assert plugin["name"] == "rf" and plugin["version"] == __version__ and plugin["skills"] == "./skills/"
+    market = json.loads((ROOT / ".agents/plugins/marketplace.json").read_text())
+    entry, = market["plugins"]
+    assert entry["name"] == "rf" and (ROOT / entry["source"]["path"]).resolve() == codex
+    for name in ("ask", "eval", "seal"):
+        text = (codex / "skills" / name / "SKILL.md").read_text()
+        assert "ringframe" in text and "ledger.jsonl" not in text
+        policy = (codex / "skills" / name / "agents" / "openai.yaml").read_text()
+        assert "allow_implicit_invocation: false" in policy
+    ask_text = (codex / "skills/ask/SKILL.md").read_text()
+    assert "request_user_input" in ask_text and "default_mode_request_user_input" in ask_text and "ringframe ask compile" in ask_text and "--handoff" in ask_text

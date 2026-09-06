@@ -13,6 +13,10 @@ ROUTE = {"fits": "bounded", "alternatives": [{"capability": "native_direct", "re
 
 def stage(ws, source=b"fix the login bug\n", prompt=b"Fix the login bug.\n"):
     d = ws.rf_dir / "tmp" / "stage-1"
+    n = 1
+    while d.exists():
+        n += 1
+        d = ws.rf_dir / "tmp" / f"stage-{n}"
     d.mkdir(parents=True)
     (d / "source.txt").write_bytes(source)
     (d / "prompt.txt").write_bytes(prompt)
@@ -229,3 +233,31 @@ def test_show_and_resolve(repo):
         ask.show(ws, ask_id="Log")
     cands = ask.resolve(ws, session="s2")
     assert [c["id"] for c in cands["candidates"]] == [b["ask_id"]] and cands["rule_applied"] == "same_session"
+
+
+def test_codex_handoff_prompt_prefix_and_length_policy(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    host = {"name": "codex", "version": "codex-cli 0.153.1", "surface": "native-tui"}
+    out = compile_(ws, staged=stage(ws, prompt=b"/goal Keep the checkout p95 under 800 ms.\n"), capability="native_goal", host=host,
+                   classification={**CLS, "result": "continuing_objective", "horizon": "persistent"})
+    assert out["delivery_mode"] == "human_handoff"
+    with pytest.raises(LedgerError, match="ask.prompt_prefix"):
+        compile_(ws, staged=stage(ws, prompt=b"Keep the checkout fast.\n"), capability="native_goal", host=host, classification={**CLS, "result": "continuing_objective", "horizon": "persistent"})
+    with pytest.raises(LedgerError, match="ask.prompt_too_long"):
+        compile_(ws, staged=stage(ws, prompt=b"/goal " + b"x" * 4000 + b"\n"), capability="native_goal", host=host, classification={**CLS, "result": "continuing_objective", "horizon": "persistent"})
+    assert store.verify(ws) == []
+
+
+def test_non_human_actor_needs_authorization_to_compile_or_confirm(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    agent = {"kind": "agent", "id": "ci", "authority": "preauthorized"}
+    with pytest.raises(NeedsInput, match="authorization"):
+        compile_(ws, actor=agent)
+    (ws.rf_dir / "authorizations").mkdir()
+    (ws.rf_dir / "authorizations" / "ci.json").write_text(json.dumps({"schema": "ringframe.authorization/1", "actor": "agent:ci", "granted_by": "human:owner", "time": "t",
+        "allowed": {"capabilities": ["native_plan"], "effects": ["read"], "dispositions": [], "eval_verdicts": [], "subject_kinds": []}, "expires": "2999-01-01T00:00:00Z"}))
+    out = compile_(ws, actor=agent)
+    ask.confirm(ws, out["ask_id"], actor=agent)
+    assert store.events(ws)[0]["actor"] == {"kind": "agent", "id": "ci", "authority": "preauthorized:authorizations/ci.json"}
+    with pytest.raises(NeedsInput):
+        compile_(ws, staged=stage(ws), actor=agent, capability="native_direct", classification={**CLS, "task": ["question"], "result": "answer", "effects": ["read"]})

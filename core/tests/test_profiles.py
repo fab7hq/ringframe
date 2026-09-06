@@ -28,3 +28,14 @@ def test_capability_lookup():
     assert cap["activation"]["tool"] == "EnterPlanMode" and cap["delivery_mode"] == "native_dispatch"
     assert profiles.capability(p, "native_goal") is None
     assert "write" in profiles.capability(p, "native_direct")["requires_explicit_request_for_effects"]
+
+
+def test_codex_profile_is_handoff_only_with_request_user_input():
+    p = profiles.load("codex")
+    assert p["profile_id"] == "codex@0.153" and p["confirmation"] == {"tool": "request_user_input", "requires_feature": "default_mode_request_user_input"}
+    assert {c["id"] for c in p["capabilities"]} == {"native_plan", "native_goal", "native_direct"}
+    for c in p["capabilities"]:
+        if c["id"] != "native_direct":
+            assert c["delivery_mode"] == "human_handoff" and c["activation"]["mechanism"] is None
+    assert profiles.capability(p, "native_goal")["prompt_prefix"] == "/goal " and profiles.capability(p, "native_goal")["max_prompt_chars"] == 4000
+    assert profiles.for_host({"name": "codex", "version": "codex-cli 0.153.1"})["profile_id"] == "codex@0.153"

@@ -22,6 +22,11 @@ uv tool install ringframe
 # Claude Code
 claude plugin marketplace add fab7hq/ringframe
 claude plugin install rf@ringframe
+
+# Codex (handoff: RingFrame compiles and confirms, you submit the prompt)
+codex features enable default_mode_request_user_input
+codex plugin marketplace add fab7hq/ringframe
+codex plugin add rf@ringframe
 ~~~
 
 The plugin's skills and hooks call `ringframe`; without it they do nothing.
