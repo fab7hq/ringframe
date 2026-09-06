@@ -131,6 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     ss = sub.add_parser("sessions").add_subparsers(dest="sub", required=True)
     cap = ss.add_parser("capture")
     cap.add_argument("--host", required=True)
+    cap.add_argument("--host-version", default=None, help="e.g. the output of `claude --version`, supplied by the hook")
     pr = ss.add_parser("prune")
     pr.add_argument("--older-than", required=True, help="e.g. 7d or 36h")
 
@@ -187,7 +188,7 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         return (0 if not findings else 2), {"findings": findings, "clean": not findings}
     if ns.cmd == "sessions":
         if ns.sub == "capture":
-            rec = sessions.capture(ws, ns.host, json.load(sys.stdin))
+            rec = sessions.capture(ws, ns.host, json.load(sys.stdin), host_version=ns.host_version)
             return 0, {"captured": rec is not None, **(rec or {})}
         return 0, {"removed": sessions.prune(ws, ns.older_than)}
     if ns.cmd == "export":

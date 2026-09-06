@@ -28,14 +28,15 @@ def log(ws: Workspace, host: str, session: str, name: str, record: dict) -> None
         f.write(canonical({"time": now(), **record}) + b"\n")
 
 
-def capture(ws: Workspace, host: str, payload: dict) -> dict | None:
+def capture(ws: Workspace, host: str, payload: dict, host_version: str | None = None) -> dict | None:
     prompt = payload.get("prompt")
     session = payload.get("session_id")
     if not isinstance(prompt, str) or not prompt.startswith(PREFIX) or not session:
         return None
     data = prompt.encode("utf-8")
     rec = {"prompt": prompt, "sha256": digest.sha256_bytes(data), "bytes": len(data),
-           "cwd": payload.get("cwd"), "permission_mode": payload.get("permission_mode")}
+           "cwd": payload.get("cwd"), "permission_mode": payload.get("permission_mode"),
+           "host_version": (host_version or "").strip() or None}
     log(ws, host, session, "prompts.jsonl", rec)
     return rec
 
@@ -49,11 +50,33 @@ def source_verified(ws: Workspace, host: str, session: str | None, source: bytes
         return "unverified", "no_capture"
     want = source.decode("utf-8", "surrogateescape").removesuffix("\n")
     for line in path.read_bytes().splitlines():
-        prompt = json.loads(line)["prompt"]
-        _, _, args = prompt.partition(" ")
-        if prompt.startswith(PREFIX + "ask") and args.removesuffix("\n") == want:
+        if _matches(json.loads(line)["prompt"], want):
             return "exact", None
     return "unverified", "mismatch"
+
+
+def _matches(prompt: str, want: str) -> bool:
+    _, _, args = prompt.partition(" ")
+    return prompt.startswith(PREFIX + "ask") and args.removesuffix("\n") == want
+
+
+def resolve_session(ws: Workspace, host: str, source: bytes, window_s: int = 1800) -> dict | None:
+    """The one session whose recent captured `/rf:ask` invocation carries exactly these source bytes.
+
+    The model never knows its own session id; the hook does. Ambiguity resolves to None."""
+    base = ws.rf_dir / "sessions" / host
+    want = source.decode("utf-8", "surrogateescape").removesuffix("\n")
+    cutoff = time.time() - window_s
+    hits = []
+    for path in sorted(base.glob("*/prompts.jsonl")) if base.exists() else []:
+        if path.stat().st_mtime < cutoff:
+            continue
+        for line in path.read_bytes().splitlines():
+            rec = json.loads(line)
+            if _matches(rec["prompt"], want):
+                hits.append({"session_ref": path.parent.name, "host_version": rec.get("host_version")})
+                break
+    return hits[0] if len(hits) == 1 else None
 
 
 def parse_duration(text: str) -> int:

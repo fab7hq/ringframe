@@ -50,6 +50,16 @@ def _staged(staged: Path) -> tuple[bytes, bytes]:
 
 def _persist(ws, type_, staged, title, capability, classification, route, host, links, limitations, actor, extra):
     source, prompt = _staged(staged)
+    host = dict(host)
+    provenance = {}
+    if not host.get("session_ref"):
+        found = sessions.resolve_session(ws, host["name"], source)
+        if found:
+            host["session_ref"] = found["session_ref"]
+            provenance["session_ref_source"] = "capture"
+            if not host.get("version") and found.get("host_version"):
+                host["version"] = found["host_version"]
+                provenance["version_source"] = "capture"
     profile = profiles.for_host(host)
     cap = profiles.capability(profile, capability)
     if cap is None:
@@ -65,7 +75,7 @@ def _persist(ws, type_, staged, title, capability, classification, route, host, 
         limitations.append(f"source_verified unverified: {reason}")
     data = {"title": title, "classification": classification, "selected_capability": capability, "route_explanation": route,
             "host": {"name": host["name"], "version": host.get("version"), "surface": host.get("surface"),
-                     "session_ref": host.get("session_ref"), "workspace": ws.describe(),
+                     "session_ref": host.get("session_ref"), "workspace": ws.describe(), **provenance,
                      "profile_id": profile["profile_id"], "profile_sha256": profiles.sha256(profile["profile_id"].split("@")[0] if profile["host"] else "unknown")},
             "source": source_ref, "prompt": prompt_ref, "source_verified": verified, "limitations": limitations, **extra}
     if type_ == "ask.confirmed":

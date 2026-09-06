@@ -141,4 +141,4 @@ def test_export_and_prune(repo, monkeypatch, tmp_path):
 def test_module_entrypoint_and_version():
     cp = subprocess.run([sys.executable, "-m", "ringframe", "--version"], capture_output=True, text=True,
                         env={**os.environ, "PYTHONPATH": "core"})
-    assert cp.returncode == 0 and cp.stdout.strip() == "ringframe 0.0.1"
+    assert cp.returncode == 0 and cp.stdout.strip() == "ringframe 0.0.2"

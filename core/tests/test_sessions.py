@@ -26,6 +26,16 @@ def test_find_invocation_matches_argument_bytes(repo):
     assert sessions.source_verified(ws, "claude-code", None, b"x") == ("unverified", "no_session_ref")
 
 
+def test_capture_records_host_version_and_resolves_session(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    rec = sessions.capture(ws, "claude-code", payload("/rf:ask fix the login bug", "sA"), host_version="2.1.263 (Claude Code)\n")
+    assert rec["host_version"] == "2.1.263 (Claude Code)"
+    assert sessions.resolve_session(ws, "claude-code", b"fix the login bug\n") == {"session_ref": "sA", "host_version": "2.1.263 (Claude Code)"}
+    assert sessions.resolve_session(ws, "claude-code", b"something else") is None
+    sessions.capture(ws, "claude-code", payload("/rf:ask fix the login bug", "sB"))
+    assert sessions.resolve_session(ws, "claude-code", b"fix the login bug") is None  # ambiguous
+
+
 def test_prune_removes_old_sessions(repo):
     ws = workspace.resolve(cwd=repo).ensure()
     sessions.capture(ws, "claude-code", payload("/rf:ask a", "old"))

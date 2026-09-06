@@ -1,6 +1,7 @@
 """Host capability profiles shipped with the core."""
 
 import json
+import re
 from importlib import resources
 
 from ringframe import digest
@@ -25,7 +26,8 @@ def names() -> list[str]:
 
 
 def _version(v: str) -> tuple:
-    return tuple(int(x) for x in v.split("-")[0].split(".") if x.isdigit())
+    m = re.search(r"\d+(?:\.\d+)+", v)
+    return tuple(int(x) for x in m.group(0).split(".")) if m else ()
 
 
 def _in_range(version: str, spec: str) -> bool:

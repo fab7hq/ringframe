@@ -13,6 +13,7 @@ def test_claude_profile_loads_and_digests():
 def test_for_host_matches_version_range():
     assert profiles.for_host({"name": "claude-code", "version": "2.1.260"})["profile_id"] == "claude-code@2.1"
     assert profiles.for_host({"name": "claude-code", "version": "2.1.999"})["profile_id"] == "claude-code@2.1"
+    assert profiles.for_host({"name": "claude-code", "version": "2.1.263 (Claude Code)"})["profile_id"] == "claude-code@2.1"
 
 
 def test_for_host_degrades_to_unknown_outside_range_or_unknown_host():

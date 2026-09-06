@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ringframe"
-version = "0.0.1"
+version = "0.0.2"
 description = "Explicit intent, evaluation, and decision layer inside native AI harnesses"
 readme = "README.md"
 license = "Apache-2.0"

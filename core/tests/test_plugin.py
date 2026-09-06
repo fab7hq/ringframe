@@ -40,12 +40,15 @@ def test_skills_are_explicit_only_and_call_the_cli():
 
 
 def _shim(tmp_path):
-    """A `ringframe` on PATH that runs this checkout's package."""
+    """A `ringframe` (and a fake `claude`) on PATH that run this checkout's package."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     shim = bin_dir / "ringframe"
     shim.write_text(f'#!/bin/sh\nPYTHONPATH="{ROOT / "core"}" exec "{sys.executable}" -m ringframe "$@"\n')
     shim.chmod(0o755)
+    fake_claude = bin_dir / "claude"
+    fake_claude.write_text("#!/bin/sh\necho '2.1.263 (Claude Code)'\n")
+    fake_claude.chmod(0o755)
     return str(bin_dir)
 
 
@@ -68,6 +71,8 @@ def test_hooks_drive_capture_and_delivery_end_to_end(repo, tmp_path):
     path = _shim(tmp_path) + os.pathsep + os.environ["PATH"]
     submit = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "sess", "cwd": str(repo), "permission_mode": "default", "prompt": "/rf:ask add a health endpoint"})
     assert _hook("capture-prompt.sh", submit, repo, path).returncode == 0
+    captured = json.loads((repo / ".fab7/rf/sessions/claude-code/sess/prompts.jsonl").read_text())
+    assert captured["host_version"] == "2.1.263 (Claude Code)"
     stage = repo / ".fab7/rf/tmp/stage-1"
     stage.mkdir(parents=True)
     (stage / "source.txt").write_text("add a health endpoint\n")
@@ -75,10 +80,10 @@ def test_hooks_drive_capture_and_delivery_end_to_end(repo, tmp_path):
     out = subprocess.run(["ringframe", "ask", "confirm", "--staged", str(stage), "--title", "Health", "--capability", "native_plan",
                           "--classification", json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}),
                           "--route", json.dumps({"fits": "f", "alternatives": [], "continuation": "c", "effects": "e", "gaps": []}),
-                          "--host", json.dumps({"name": "claude-code", "version": "2.1.260", "surface": "native-tui", "session_ref": "sess"}), "--json"],
+                          "--host", json.dumps({"name": "claude-code", "surface": "native-tui"}), "--json"],
                          cwd=repo, capture_output=True, text=True, env={**os.environ, "PATH": path}, check=True)
     confirmed = json.loads(out.stdout)
-    assert confirmed["source_verified"] == "exact"
+    assert confirmed["source_verified"] == "exact"  # session and version resolved from the hook capture
     post = json.dumps({"hook_event_name": "PostToolUse", "session_id": "sess", "cwd": str(repo), "tool_name": "EnterPlanMode", "tool_use_id": "toolu_9", "tool_input": {}, "tool_response": {"message": "entered"}})
     assert _hook("record-delivery.sh", post, repo, path).returncode == 0
     shown = json.loads(subprocess.run(["ringframe", "ask", "show", "--json"], cwd=repo, capture_output=True, text=True, env={**os.environ, "PATH": path}, check=True).stdout)

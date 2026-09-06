@@ -38,6 +38,18 @@ def test_confirm_publishes_two_artifacts_and_one_event(repo):
     assert store.verify(ws) == []
 
 
+def test_confirm_resolves_session_and_version_from_capture(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    sessions.capture(ws, "claude-code", {"session_id": "hook-session", "prompt": "/rf:ask fix the login bug"}, host_version="2.1.263 (Claude Code)")
+    out = confirm(ws, host={"name": "claude-code", "surface": "native-tui"})
+    assert out["source_verified"] == "exact"
+    host = store.events(ws)[0]["data"]["host"]
+    assert host["session_ref"] == "hook-session" and host["session_ref_source"] == "capture"
+    assert host["version"] == "2.1.263 (Claude Code)" and host["version_source"] == "capture"
+    assert host["profile_id"] == "claude-code@2.1"
+    assert ask.delivery_from_hook(ws, hook(session="hook-session"))["state"] == "native_accepted"
+
+
 def test_confirm_without_capture_is_unverified(repo):
     ws = workspace.resolve(cwd=repo).ensure()
     out = confirm(ws)

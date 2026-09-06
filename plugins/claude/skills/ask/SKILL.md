@@ -25,7 +25,10 @@ $ARGUMENTS
 - Never print classification labels, `NEXT_COMMAND`, a copyable `/plan`
   command, or compiler protocol. Never claim a capability was activated before
   its tool result confirms it.
-- If `ringframe` is missing (`Bash` says command not found), stop and tell the
+- `Bash` is for `ringframe` only. Run exactly one plain `ringframe …` command
+  per call: no `&&`, `;`, pipes, `cd`, `mkdir`, `which`, `command -v`, or
+  `claude --version`. The `Write` tool creates the staging directory itself.
+- If a `ringframe` command fails with "command not found", stop and tell the
   user to run `uv tool install ringframe`; do not write the ledger by hand.
 
 ## 1. Route
@@ -90,9 +93,9 @@ When the interaction ends with a final candidate:
    `--classification '<json>'` with keys `task` (list), `result`,
    `interaction`, `horizon`, `effects` (list), `--route '<json>'` with keys
    `fits`, `alternatives` (list of `{capability, reason}`), `continuation`,
-   `effects`, `gaps` (list), `--host '{"name":"claude-code","version":"<claude
-   --version>","surface":"native-tui","session_ref":"<session id if you know
-   it, else null>"}'`, and `--json`.
+   `effects`, `gaps` (list), `--host '{"name":"claude-code","surface":"native-tui"}'`,
+   and `--json`. Do not guess a version or session id: the CLI takes both from
+   the plugin hook's capture of this very invocation.
 3. If the command exits non-zero, show its error text and stop.
 
 ## 5. Deliver
