@@ -64,10 +64,24 @@ produces documents also: prefer current first-party sources, cite material
 claims, mark unverified behaviour, expand finite path templates. Omit anything
 Claude Code already does reliably.
 
-## 3. Confirm natively
+## 3. Persist the candidate, then confirm natively
 
-Your first externally visible action is one `AskUserQuestion` call with one
-single-select question:
+Before showing the chooser, persist the candidate so the record exists even if
+the turn ends early:
+
+1. Pick a nonce and, with the `Write` tool, create
+   `.fab7/rf/tmp/stage-<nonce>/source.txt` containing exactly the source
+   intent above, and `.fab7/rf/tmp/stage-<nonce>/prompt.txt` containing only
+   the compiled prompt (no frontmatter, explanation, or copy instructions).
+2. Run, via `Bash`, `ringframe ask compile --staged <that directory> --title
+   "<short human title>" --capability native_plan|native_direct
+   --classification '<json>' --route '<json>' --host
+   '{"name":"claude-code","surface":"native-tui"}' --json`, with the
+   vocabulary in section 4. Keep the returned `ask_id`. If it exits non-zero,
+   show the error text and stop.
+
+Then your first externally visible interaction is one `AskUserQuestion` call
+with one single-select question:
 
 - header: `Ask route`
 - question: name the selected capability and why it fits, why the other route
@@ -80,22 +94,18 @@ single-select question:
 - option `Cancel`: nothing is activated or inspected.
 - metadata source: `ringframe.ask`
 
-Free text is a revision: update the prompt without losing the source intent
-and ask again. Drafts are not persisted.
+Free text is a revision: compile the revised candidate again (a new
+`ringframe ask compile` with `--link revises:<previous ask_id>`) and ask again.
+Every candidate shown to the user is persisted; only the last one is confirmed.
 
-## 4. Persist through the CLI
+## 4. Record the answer through the CLI
 
-When the interaction ends with a final candidate:
+- Proceed: `ringframe ask confirm --ask <ask_id> --json`.
+- Cancel: `ringframe ask cancel --ask <ask_id> --reason "<why>" --json`, then
+  stop.
 
-1. Pick a nonce and, with the `Write` tool, create
-   `.fab7/rf/tmp/stage-<nonce>/source.txt` containing exactly the source
-   intent above, and `.fab7/rf/tmp/stage-<nonce>/prompt.txt` containing only
-   the final prompt (no frontmatter, explanation, or copy instructions). For a
-   cancelled Ask, `prompt.txt` is the last candidate.
-2. Run, via `Bash`, `ringframe ask confirm` (or `ringframe ask cancel
-   --reason "<why>"`) with `--staged <that directory>`, `--title "<short
-   human title>"`, `--capability native_plan|native_direct`,
-   `--classification '<json>'` using exactly this vocabulary: `task` is a
+Vocabulary for `ringframe ask compile`: `--classification '<json>'` uses
+exactly this vocabulary: `task` is a
    list from `question research clarify plan implement diagnose review operate
    document`; `result` is one of `answer plan workspace_change evidence
    continuing_objective`; `interaction` is `interactive` or `approval_gated`;
@@ -103,10 +113,9 @@ When the interaction ends with a final candidate:
    from `read write execute external_effect`. `--route '<json>'` with keys
    `fits`, `alternatives` (list of `{capability, reason}`), `continuation`,
    `effects`, `gaps` (list), and `explicit_direct_request` (boolean, true only
-   when the source intent asks to skip planning or act immediately), `--host '{"name":"claude-code","surface":"native-tui"}'`,
-   and `--json`. Do not guess a version or session id: the CLI takes both from
-   the plugin hook's capture of this very invocation.
-3. If the command exits non-zero, show its error text and stop.
+   when the source intent asks to skip planning or act immediately). Do not
+   guess a version or session id: the CLI takes both from the plugin hook's
+   capture of this very invocation.
 
 ## 5. Deliver
 
@@ -118,4 +127,4 @@ When the interaction ends with a final candidate:
   --ask <ask_id> --handoff` and show its output verbatim.
 - `native_direct`: continue with the source intent under normal permissions.
   Record nothing else.
-- Cancel: stop.
+- Cancel: already recorded in section 4; stop.

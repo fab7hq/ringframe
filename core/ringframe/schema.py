@@ -17,13 +17,16 @@ ENUMS = {
     "data.mechanism": {"capability_activate", "prompt_submit", None},
     "data.state": {"native_accepted", "handoff_ready", "delivery_failed", "unavailable"},
     "data.submission": {"unobserved", "not_applicable"},
+    "submission.state": {"observed", "attributed"},
     "data.verdict": {"aligned", "drifted", "incomplete"},
     "data.disposition": {"accepted", "rejected", "deferred", "abandoned"},
 }
 ASK_COMMON = ["title", "classification", "selected_capability", "route_explanation", "host", "source", "prompt", "source_verified", "limitations"]
 REQUIRED = {
-    "ask.confirmed": ASK_COMMON + ["delivery_mode"],
-    "ask.cancelled": ASK_COMMON,
+    "ask.compiled": ASK_COMMON + ["delivery_mode"],
+    "ask.confirmed": ["confirmation"],
+    "ask.cancelled": ["cancellation"],
+    "ask.submission": ["state", "observed_by", "attributed_by", "as_modified", "host", "prompt_sha256"],
     "ask.delivery": ["mode", "mechanism", "state", "qualification", "receipt", "submission", "limitations"],
     "eval.completed": ["subject", "definition_sha256", "verdict", "counts", "forbidden_effects_observed", "artifact", "limitations"],
     "seal.created": ["eval_id", "subject", "disposition", "authority", "freshness", "artifact"],
@@ -69,7 +72,7 @@ def validate_event(ev: dict) -> None:
     for k in REQUIRED[ev["type"]]:
         if k not in data:
             _fail(f"data.{k}")
-    if ev["type"] in ("ask.confirmed", "ask.cancelled"):
+    if ev["type"] == "ask.compiled":
         c = data["classification"]
         for k in ("task", "result", "interaction", "horizon", "effects"):
             if k not in c:
@@ -86,8 +89,15 @@ def validate_event(ev: dict) -> None:
         _ref("data.source", data["source"])
         _ref("data.prompt", data["prompt"])
         _enum("data.source_verified", "data.source_verified", data["source_verified"])
-        if ev["type"] == "ask.confirmed":
-            _enum("data.delivery_mode", "data.delivery_mode", data["delivery_mode"])
+        _enum("data.delivery_mode", "data.delivery_mode", data["delivery_mode"])
+    elif ev["type"] in ("ask.confirmed", "ask.cancelled"):
+        grade = data["confirmation" if ev["type"] == "ask.confirmed" else "cancellation"]
+        if not isinstance(grade, dict) or not ({"observed_by", "attributed_by"} & grade.keys()):
+            _fail(f"data.{'confirmation' if ev['type'] == 'ask.confirmed' else 'cancellation'}", "needs observed_by or attributed_by")
+    elif ev["type"] == "ask.submission":
+        _enum("data.state", "submission.state", data["state"])
+        if not (data["observed_by"] or data["attributed_by"]):
+            _fail("data.observed_by", "or attributed_by is required")
     elif ev["type"] == "ask.delivery":
         for k in ("mode", "mechanism", "state", "submission"):
             _enum(f"data.{k}", f"data.{k}", data[k])

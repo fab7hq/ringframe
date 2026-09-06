@@ -69,6 +69,7 @@ def test_run_links_to_ask_and_uncovered_is_incomplete(repo):
     assert rec["verdict"] == "incomplete"
     assert rec["requirements"][1]["status"] == "uncovered"
     assert store.events(ws)[-1]["links"] == [{"rel": "evaluates", "id": "ask_X"}]
+    assert rec["basis"]["submission"] == "unobserved" and "submission of the compiled prompt: unobserved" in rec["limitations"]
 
 
 def test_failed_command_is_drifted_and_indeterminate_on_launch_error(repo):

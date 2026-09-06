@@ -81,18 +81,26 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--version", dest="host_version", default="")
 
     a = sub.add_parser("ask").add_subparsers(dest="sub", required=True)
-    for name in ("confirm", "cancel"):
-        c = a.add_parser(name)
-        c.add_argument("--staged", required=True, type=Path)
-        c.add_argument("--title", required=True)
-        c.add_argument("--capability", required=True)
-        c.add_argument("--classification", required=True)
-        c.add_argument("--route", required=True)
-        c.add_argument("--host", required=True)
-        c.add_argument("--link", action="append", help="revises:<ask_id> | remediates:<evl_id>")
-        c.add_argument("--limitation", action="append")
-        if name == "cancel":
-            c.add_argument("--reason")
+    c = a.add_parser("compile")
+    c.add_argument("--staged", required=True, type=Path)
+    c.add_argument("--title", required=True)
+    c.add_argument("--capability", required=True)
+    c.add_argument("--classification", required=True)
+    c.add_argument("--route", required=True)
+    c.add_argument("--host", required=True)
+    c.add_argument("--link", action="append", help="revises:<ask_id> | remediates:<evl_id>")
+    c.add_argument("--limitation", action="append")
+    cf = a.add_parser("confirm")
+    cf.add_argument("--ask", required=True)
+    cn = a.add_parser("cancel")
+    cn.add_argument("--ask", required=True)
+    cn.add_argument("--reason")
+    cn.add_argument("--attributed", action="store_true", help="recorded later by the person, not by the skill during the Ask turn")
+    sm = a.add_parser("submitted")
+    sm.add_argument("--ask", required=True)
+    sm.add_argument("--as-modified", action="store_true")
+    cp = a.add_parser("copy")
+    cp.add_argument("--ask", required=True)
     d = a.add_parser("delivery")
     d.add_argument("--from-hook", action="store_true")
     d.add_argument("--ask")
@@ -141,6 +149,10 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _session_of(rec):
+    return rec.get("session_id")
+
+
 def _dispatch(ns, ws) -> tuple[int, object]:
     actor = _actor(ns.actor, ns.authority)
     if ns.cmd == "init":
@@ -151,10 +163,17 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         name = prof["profile_id"].split("@")[0] if prof["host"] else "unknown"
         return 0, {**prof, "sha256": profiles.sha256(name)}
     if ns.cmd == "ask":
-        if ns.sub in ("confirm", "cancel"):
-            kw = dict(staged=ns.staged, title=ns.title, capability=ns.capability, classification=_json_arg(ns.classification),
-                      route=_json_arg(ns.route), host=_json_arg(ns.host), links=_links(ns.link), limitations=ns.limitation or [], actor=actor)
-            return 0, ask.confirm(ws, **kw) if ns.sub == "confirm" else ask.cancel(ws, reason=ns.reason, **kw)
+        if ns.sub == "compile":
+            return 0, ask.compile(ws, staged=ns.staged, title=ns.title, capability=ns.capability, classification=_json_arg(ns.classification),
+                                  route=_json_arg(ns.route), host=_json_arg(ns.host), links=_links(ns.link), limitations=ns.limitation or [], actor=actor)
+        if ns.sub == "confirm":
+            return 0, ask.confirm(ws, ns.ask, actor=actor)
+        if ns.sub == "cancel":
+            return 0, ask.cancel(ws, ns.ask, reason=ns.reason, actor=actor, attributed=ns.attributed)
+        if ns.sub == "submitted":
+            return 0, ask.submitted(ws, ns.ask, as_modified=ns.as_modified, actor=actor)
+        if ns.sub == "copy":
+            return 0, ask.prompt_text(ws, ns.ask)
         if ns.sub == "delivery":
             if ns.from_hook:
                 try:
@@ -189,7 +208,13 @@ def _dispatch(ns, ws) -> tuple[int, object]:
     if ns.cmd == "sessions":
         if ns.sub == "capture":
             rec = sessions.capture(ws, ns.host, json.load(sys.stdin), host_version=ns.host_version)
-            return 0, {"captured": rec is not None, **(rec or {})}
+            submission = None
+            if rec and "prompt" not in rec:
+                try:
+                    submission = ask.submission_from_capture(ws, ns.host, _session_of(rec), rec["sha256"])
+                except Exception:  # a hook must never fail the host turn
+                    submission = None
+            return 0, {"captured": rec is not None, **(rec or {}), "submission": submission}
         return 0, {"removed": sessions.prune(ws, ns.older_than)}
     if ns.cmd == "export":
         return 0, _export(ws, ns.ask, ns.out)
@@ -235,5 +260,8 @@ def main(argv=None) -> int:
     except Exception as exc:  # pragma: no cover - internal
         print(f"ringframe: internal error: {exc!r}", file=sys.stderr)
         return 4
+    if ns.cmd == "ask" and getattr(ns, "sub", None) == "copy":
+        sys.stdout.write(str(result))
+        return code
     _emit(result, ns.json)
     return code

@@ -1,4 +1,4 @@
-"""Ask: persist one confirmed or cancelled intent, record observable delivery, resolve records."""
+"""Ask: persist a compiled intent, then append graded observations (confirmation, cancellation, submission, delivery)."""
 
 import shutil
 from datetime import datetime, timedelta, timezone
@@ -56,7 +56,8 @@ def _staged(staged: Path) -> tuple[bytes, bytes]:
     return out[0], out[1]
 
 
-def _persist(ws, type_, staged, title, capability, classification, route, host, links, limitations, actor, extra):
+def compile(ws, *, staged, title, capability, classification, route, host, links=(), limitations=(), actor=None):
+    """The only Ask operation that writes artifacts. Appends `ask.compiled`."""
     source, prompt = _staged(staged)
     classification = _normalize_classification(classification)
     host = dict(host)
@@ -91,42 +92,92 @@ def _persist(ws, type_, staged, title, capability, classification, route, host, 
             "host": {"name": host["name"], "version": host.get("version"), "surface": host.get("surface"),
                      "session_ref": host.get("session_ref"), "workspace": ws.describe(), **provenance,
                      "profile_id": profile["profile_id"], "profile_sha256": profiles.sha256(profile["profile_id"].split("@")[0] if profile["host"] else "unknown")},
-            "source": source_ref, "prompt": prompt_ref, "source_verified": verified, "limitations": limitations, **extra}
-    if type_ == "ask.confirmed":
-        data["delivery_mode"] = cap["delivery_mode"]
-    ev = _event(type_, ask_id, _actor(actor), data, links)
+            "source": source_ref, "prompt": prompt_ref, "source_verified": verified, "limitations": limitations,
+            "delivery_mode": cap["delivery_mode"]}
+    ev = _event("ask.compiled", ask_id, _actor(actor), data, links)
     schema.validate_event(ev)
     assert store.publish(ws, source_ref["path"], source, role="source_intent") == source_ref
     assert store.publish(ws, prompt_ref["path"], prompt, role="generated_prompt") == prompt_ref
     store.append(ws, ev)
     shutil.rmtree(staged)
     return {"ask_id": ask_id, "source": source_ref, "prompt": prompt_ref, "prompt_path": str(ws.rf_dir / prompt_ref["path"]),
-            "source_verified": verified, **({"delivery_mode": data["delivery_mode"]} if type_ == "ask.confirmed" else {})}
+            "source_verified": verified, "delivery_mode": data["delivery_mode"]}
 
 
-def confirm(ws, *, staged, title, capability, classification, route, host, links=(), limitations=(), actor=None):
-    return _persist(ws, "ask.confirmed", staged, title, capability, classification, route, host, links, limitations, actor, {})
+def _append(ws, type_, ask_id, data, actor=None):
+    ev = _event(type_, ask_id, _actor(actor), data)
+    schema.validate_event(ev)
+    store.append(ws, ev)
+    return {"ask_id": ask_id, **data}
 
 
-def cancel(ws, *, staged, title, capability, classification, route, host, links=(), limitations=(), actor=None, reason=None):
-    extra = {"reason": reason} if reason else {}
-    return _persist(ws, "ask.cancelled", staged, title, capability, classification, route, host, links, limitations, actor, extra)
+def confirm(ws, ask_id: str, actor=None) -> dict:
+    """Record the skill-reported chooser answer. Evidence grade: observed by the skill, not by the host."""
+    rec = _record(ws, ask_id)
+    if rec["confirmed"]:
+        raise LedgerError("ask.already_confirmed", ask_id)
+    return _append(ws, "ask.confirmed", ask_id, {"confirmation": {"observed_by": "skill", "surface": "AskUserQuestion"}}, actor)
+
+
+def cancel(ws, ask_id: str, reason=None, actor=None, attributed=False) -> dict:
+    rec = _record(ws, ask_id)
+    if rec["cancelled"]:
+        raise LedgerError("ask.already_cancelled", ask_id)
+    a = _actor(actor)
+    grade = {"attributed_by": f"{a['kind']}:{a['id']}"} if attributed else {"observed_by": "skill"}
+    return _append(ws, "ask.cancelled", ask_id, {"cancellation": grade, **({"reason": reason} if reason else {})}, a)
+
+
+def submitted(ws, ask_id: str, as_modified=False, actor=None) -> dict:
+    """The person attests that they submitted the prompt (possibly edited). Human attestation, not host evidence."""
+    rec = _record(ws, ask_id)
+    a = _actor(actor)
+    d = rec["compiled"]["data"]
+    return _append(ws, "ask.submission", ask_id, {"state": "attributed", "observed_by": None, "attributed_by": f"{a['kind']}:{a['id']}",
+                                                  "as_modified": bool(as_modified), "host": {"name": d["host"]["name"], "session_ref": d["host"].get("session_ref")},
+                                                  "prompt_sha256": d["prompt"]["sha256"]}, a)
+
+
+def submission_from_capture(ws, host: str, session: str, sha256: str) -> dict | None:
+    """A later user prompt whose digest equals one compiled prompt.txt: host-observed submission. Unique match only, once per Ask."""
+    hits = [(k, v) for k, v in _by_id(ws).items() if v["compiled"] and v["compiled"]["data"]["prompt"]["sha256"] == sha256
+            and not any(s["data"]["state"] == "observed" for s in v["submissions"])]
+    if len(hits) != 1:
+        return None
+    ask_id, _ = hits[0]
+    return _append(ws, "ask.submission", ask_id, {"state": "observed", "observed_by": "hook:UserPromptSubmit", "attributed_by": None,
+                                                  "as_modified": False, "host": {"name": host, "session_ref": session}, "prompt_sha256": sha256})
+
+
+def prompt_text(ws, ask_id: str) -> str:
+    return (ws.rf_dir / _record(ws, ask_id)["compiled"]["data"]["prompt"]["path"]).read_text(encoding="utf-8")
 
 
 def _by_id(ws) -> dict:
-    """ask_id -> {"confirmed": event, "delivery": event|None, "cancelled": event|None}."""
+    """ask_id -> {"compiled", "confirmed", "cancelled", "delivery": event|None, "submissions": [events]}."""
     out = {}
     for ev in store.events(ws):
         if ev["type"].startswith("ask."):
-            rec = out.setdefault(ev["id"], {"confirmed": None, "cancelled": None, "delivery": None})
-            rec[ev["type"].split(".")[1]] = ev
+            rec = out.setdefault(ev["id"], {"compiled": None, "confirmed": None, "cancelled": None, "delivery": None, "submissions": []})
+            kind = ev["type"].split(".")[1]
+            if kind == "submission":
+                rec["submissions"].append(ev)
+            else:
+                rec[kind] = ev
     return out
 
 
-def _append_delivery(ws, ask_id, confirmed, mode, mechanism, state, receipt, limitations, actor=None):
+def _record(ws, ask_id):
+    rec = _by_id(ws).get(ask_id)
+    if not rec or not rec["compiled"]:
+        raise LedgerError("ask.not_compiled", ask_id)
+    return rec
+
+
+def _append_delivery(ws, ask_id, compiled, mode, mechanism, state, receipt, limitations, actor=None):
     if _by_id(ws)[ask_id]["delivery"] is not None:
         raise LedgerError("delivery.duplicate", ask_id)
-    cap = profiles.capability(profiles.for_host(confirmed["data"]["host"]), confirmed["data"]["selected_capability"]) or {}
+    cap = profiles.capability(profiles.for_host(compiled["data"]["host"]), compiled["data"]["selected_capability"]) or {}
     data = {"mode": mode, "mechanism": mechanism, "state": state, "qualification": cap.get("qualification", {"id": None}),
             "receipt": receipt, "submission": "unobserved" if mode == "human_handoff" else "not_applicable",
             "limitations": ["native acceptance does not prove instruction following, execution, or completion"] + list(limitations)}
@@ -146,8 +197,8 @@ def delivery_from_hook(ws, payload: dict) -> dict | None:
     cutoff = datetime.now(timezone.utc) - HOOK_WINDOW
     candidates = []
     for ask_id, rec in _by_id(ws).items():
-        c = rec["confirmed"]
-        if not c or rec["delivery"] or c["data"]["delivery_mode"] != "native_dispatch":
+        c = rec["compiled"]
+        if not c or rec["delivery"] or rec["cancelled"] or c["data"]["delivery_mode"] != "native_dispatch":
             continue
         if c["data"]["host"].get("session_ref") != session:
             continue
@@ -161,54 +212,54 @@ def delivery_from_hook(ws, payload: dict) -> dict | None:
         sessions.log(ws, host, session, "delivery-skipped.jsonl",
                      {"reason": "ambiguous" if candidates else "no_candidate", "tool": tool, "candidates": [a for a, _ in candidates]})
         return None
-    ask_id, confirmed = candidates[0]
+    ask_id, compiled = candidates[0]
     response = payload.get("tool_response")
     failed = isinstance(response, dict) and (response.get("error") or response.get("is_error"))
     receipt = {"tool": tool, "tool_use_id": payload.get("tool_use_id"), "session_id": session,
                "response_sha256": digest.sha256_bytes(store.canonical(response)),
                "captured_by": "hook:PostToolUse"}
-    return _append_delivery(ws, ask_id, confirmed, "native_dispatch", "capability_activate",
+    return _append_delivery(ws, ask_id, compiled, "native_dispatch", "capability_activate",
                             "delivery_failed" if failed else "native_accepted", receipt,
                             [f"tool error: {response.get('error')}"] if failed else [])
 
 
 def delivery_handoff(ws, ask_id: str) -> tuple[str, dict]:
-    confirmed = _confirmed(ws, ask_id)
-    path = ws.rf_dir / confirmed["data"]["prompt"]["path"]
-    host = confirmed["data"]["host"]["name"]
-    text = HANDOFF.format(host=host, capability=confirmed["data"]["selected_capability"], path=path,
+    compiled = _record(ws, ask_id)["compiled"]
+    path = ws.rf_dir / compiled["data"]["prompt"]["path"]
+    host = compiled["data"]["host"]["name"]
+    text = HANDOFF.format(host=host, capability=compiled["data"]["selected_capability"], path=path,
                           host_title=HOST_TITLES.get(host, host))
-    rec = _append_delivery(ws, ask_id, confirmed, "human_handoff", None, "handoff_ready",
-                           {"path": confirmed["data"]["prompt"]["path"], "emitted_by": "cli"}, ["submission unobserved"])
+    rec = _append_delivery(ws, ask_id, compiled, "human_handoff", None, "handoff_ready",
+                           {"path": compiled["data"]["prompt"]["path"], "emitted_by": "cli"}, ["submission unobserved"])
     return text, rec
 
 
 def delivery_state(ws, ask_id: str, state: str, reason: str) -> dict:
-    confirmed = _confirmed(ws, ask_id)
-    mode = confirmed["data"]["delivery_mode"] if confirmed["data"]["delivery_mode"] != "unsupported" else "human_handoff"
-    return _append_delivery(ws, ask_id, confirmed, mode, None, state, None, [reason])
+    compiled = _record(ws, ask_id)["compiled"]
+    mode = compiled["data"]["delivery_mode"] if compiled["data"]["delivery_mode"] != "unsupported" else "human_handoff"
+    return _append_delivery(ws, ask_id, compiled, mode, None, state, None, [reason])
 
 
-def _confirmed(ws, ask_id):
-    rec = _by_id(ws).get(ask_id)
-    if not rec or not rec["confirmed"]:
-        raise LedgerError("ask.not_confirmed", ask_id)
-    return rec["confirmed"]
+def submission_grade(rec) -> str:
+    states = [s["data"]["state"] for s in rec["submissions"]]
+    return "observed" if "observed" in states else "attributed" if "attributed" in states else "unobserved"
 
 
 def _summary(ws, ask_id, rec):
-    ev = rec["confirmed"] or rec["cancelled"]
+    ev = rec["compiled"]
     d = ev["data"]
-    return {"id": ask_id, "ask_id": ask_id, "title": d["title"], "time": ev["time"], "outcome": ev["type"].split(".")[1],
+    outcome = "cancelled" if rec["cancelled"] else "confirmed" if rec["confirmed"] else "compiled"
+    return {"id": ask_id, "ask_id": ask_id, "title": d["title"], "time": ev["time"], "outcome": outcome,
             "capability": d["selected_capability"], "session_ref": d["host"].get("session_ref"),
             "source_verified": d["source_verified"], "source": d["source"], "prompt": d["prompt"],
             "prompt_path": str(ws.rf_dir / d["prompt"]["path"]),
-            "delivery": rec["delivery"]["data"]["state"] if rec["delivery"] else None}
+            "delivery": rec["delivery"]["data"]["state"] if rec["delivery"] else None,
+            "submission": submission_grade(rec)}
 
 
 def resolve(ws, session=None, kind="ask", reference=None) -> dict:
     """Ordered resolution; never picks the newest for being newest."""
-    recs = {k: v for k, v in _by_id(ws).items() if v["confirmed"] or v["cancelled"]}
+    recs = {k: v for k, v in _by_id(ws).items() if v["compiled"]}
     summaries = [_summary(ws, k, v) for k, v in recs.items()]
     if reference:
         exact = [s for s in summaries if s["ask_id"] == reference]

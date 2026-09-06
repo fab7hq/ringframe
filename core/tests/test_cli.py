@@ -38,8 +38,12 @@ def staged(repo, name="stage-1"):
 
 def confirm(repo, mp, **kw):
     cap = kw.get("capability", "native_plan")
-    return run(repo, "ask", "confirm", "--staged", staged(repo, kw.get("stage", "stage-1")), "--title", kw.get("title", "Login"),
-               "--capability", cap, "--classification", CLS, "--route", ROUTE, "--host", host(kw.get("session", "s1")), "--json", monkeypatch=mp)
+    code, out, err = run(repo, "ask", "compile", "--staged", staged(repo, kw.get("stage", "stage-1")), "--title", kw.get("title", "Login"),
+                         "--capability", cap, "--classification", CLS, "--route", ROUTE, "--host", host(kw.get("session", "s1")), "--json", monkeypatch=mp)
+    if code == 0:
+        c2, o2, _ = run(repo, "ask", "confirm", "--ask", out["ask_id"], "--json", monkeypatch=mp)
+        assert c2 == 0 and o2["confirmation"]["observed_by"] == "skill"
+    return code, out, err
 
 
 def test_init_and_profile_show(repo, monkeypatch):
@@ -84,19 +88,36 @@ def test_ask_handoff_state_and_resolution_exit_codes(repo, monkeypatch):
     assert code == 0 and out["ask_id"] == b["ask_id"]
 
 
-def test_ask_cancel_and_usage_errors(repo, monkeypatch):
-    code, out, _ = run(repo, "ask", "cancel", "--staged", staged(repo), "--title", "t", "--capability", "native_plan", "--classification", CLS,
-                       "--route", ROUTE, "--host", host(), "--reason", "nah", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and "delivery_mode" not in out
-    code, out, err = run(repo, "ask", "confirm", "--staged", "/nope", "--title", "t", "--capability", "native_plan", "--classification", CLS,
+def test_ask_compile_cancel_submitted_copy_and_usage_errors(repo, monkeypatch):
+    code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "t", "--capability", "native_plan", "--classification", CLS,
+                       "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["delivery_mode"] == "native_dispatch"
+    code, c, _ = run(repo, "ask", "cancel", "--ask", out["ask_id"], "--reason", "nah", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and c["cancellation"] == {"observed_by": "skill"}
+    code, s, _ = run(repo, "ask", "submitted", "--ask", out["ask_id"], "--as-modified", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and s["state"] == "attributed" and s["as_modified"] is True
+    code, text, _ = run(repo, "ask", "copy", "--ask", out["ask_id"], monkeypatch=monkeypatch)
+    assert code == 0 and text == "Fix login.\n"
+    code, out, err = run(repo, "ask", "compile", "--staged", "/nope", "--title", "t", "--capability", "native_plan", "--classification", CLS,
                          "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
     assert code == 2 and out["error"] == "ask.staged_dir"
     with pytest.raises(SystemExit) as e:
-        run(repo, "ask", "confirm", monkeypatch=monkeypatch)
+        run(repo, "ask", "compile", monkeypatch=monkeypatch)
     assert e.value.code == 1
-    code, out, _ = run(repo, "ask", "confirm", "--staged", staged(repo, "s3"), "--title", "t", "--capability", "native_plan",
+    code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo, "s3"), "--title", "t", "--capability", "native_plan",
                        "--classification", "{not json", "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
     assert code == 1 and out["error"] == "usage"
+
+
+def test_capture_of_a_pasted_prompt_records_observed_submission(repo, monkeypatch):
+    code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "t", "--capability", "human_handoff", "--classification", CLS,
+                       "--route", ROUTE, "--host", json.dumps({"name": "codex", "surface": "native-tui"}), "--json", monkeypatch=monkeypatch)
+    assert code == 0
+    payload = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "c9", "prompt": "Fix login.\n", "cwd": str(repo)})
+    code, cap, _ = run(repo, "sessions", "capture", "--host", "codex", "--json", stdin=payload, monkeypatch=monkeypatch)
+    assert code == 0 and cap["captured"] is True and cap["submission"]["ask_id"] == out["ask_id"] and cap["submission"]["state"] == "observed"
+    code, shown, _ = run(repo, "ask", "show", "--json", monkeypatch=monkeypatch)
+    assert shown["submission"] == "observed" and shown["outcome"] == "compiled"
 
 
 def test_eval_and_seal_cli(repo, monkeypatch, tmp_path):

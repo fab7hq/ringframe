@@ -148,6 +148,12 @@ def run(ws: Workspace, eval_id: str, observations: list[dict] | None = None, def
     forbidden = _evaluate(root, definition.get("forbidden_effects", []), observations or [])
     after = subject_digest(ws, subject["kind"], subject["ref"])
     limitations = ["attributed observations are not independently verified", "commands are caller-selected"]
+    basis = dict(definition["basis"])
+    if basis.get("ask_id"):
+        from ringframe import ask as _ask  # local import: ask depends on sessions/profiles, not on evaluate
+        rec = _ask._by_id(ws).get(basis["ask_id"])
+        basis["submission"] = _ask.submission_grade(rec) if rec and rec["compiled"] else "unobserved"
+        limitations.append(f"submission of the compiled prompt: {basis['submission']}")
     observed = [f["id"] for f in forbidden if f["status"] == "covered-fail"]
     required = [r for r in requirements if r["required"]]
     if before != after:
@@ -159,7 +165,7 @@ def run(ws: Workspace, eval_id: str, observations: list[dict] | None = None, def
         verdict = "aligned"
     else:
         verdict = "incomplete"
-    record = {"schema": "ringframe.eval/1", "eval_id": eval_id, "basis": definition["basis"],
+    record = {"schema": "ringframe.eval/1", "eval_id": eval_id, "basis": basis,
               "definition": {"path": f"evals/{eval_id}.definition.json", "sha256": definition_sha},
               "subject": {**subject, "sha256_before": before, "sha256_after": after},
               "requirements": requirements, "forbidden_effects": forbidden, "verdict": verdict,

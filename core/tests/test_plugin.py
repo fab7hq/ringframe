@@ -35,6 +35,8 @@ def test_skills_are_explicit_only_and_call_the_cli():
         text = (PLUGIN / "skills" / name / "SKILL.md").read_text()
         front = text.split("---")[1]
         assert f"name: {name}" in front and "disable-model-invocation: true" in front and "Bash(ringframe *)" in front
+        if name == "ask":
+            assert "ringframe ask compile" in text and "ringframe ask confirm --ask" in text and "ringframe ask cancel --ask" in text
         assert "NEXT_COMMAND" not in text.split("Never print")[0] or name != "ask"
         assert "ledger.jsonl" not in text  # skills never touch the ledger directly
 
@@ -77,13 +79,14 @@ def test_hooks_drive_capture_and_delivery_end_to_end(repo, tmp_path):
     stage.mkdir(parents=True)
     (stage / "source.txt").write_text("add a health endpoint\n")
     (stage / "prompt.txt").write_text("Add a health endpoint.\n")
-    out = subprocess.run(["ringframe", "ask", "confirm", "--staged", str(stage), "--title", "Health", "--capability", "native_plan",
+    out = subprocess.run(["ringframe", "ask", "compile", "--staged", str(stage), "--title", "Health", "--capability", "native_plan",
                           "--classification", json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}),
                           "--route", json.dumps({"fits": "f", "alternatives": [], "continuation": "c", "effects": "e", "gaps": []}),
                           "--host", json.dumps({"name": "claude-code", "surface": "native-tui"}), "--json"],
                          cwd=repo, capture_output=True, text=True, env={**os.environ, "PATH": path}, check=True)
     confirmed = json.loads(out.stdout)
     assert confirmed["source_verified"] == "exact"  # session and version resolved from the hook capture
+    subprocess.run(["ringframe", "ask", "confirm", "--ask", confirmed["ask_id"], "--json"], cwd=repo, capture_output=True, text=True, env={**os.environ, "PATH": path}, check=True)
     post = json.dumps({"hook_event_name": "PostToolUse", "session_id": "sess", "cwd": str(repo), "tool_name": "EnterPlanMode", "tool_use_id": "toolu_9", "tool_input": {}, "tool_response": {"message": "entered"}})
     assert _hook("record-delivery.sh", post, repo, path).returncode == 0
     shown = json.loads(subprocess.run(["ringframe", "ask", "show", "--json"], cwd=repo, capture_output=True, text=True, env={**os.environ, "PATH": path}, check=True).stdout)

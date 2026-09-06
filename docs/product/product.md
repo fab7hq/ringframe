@@ -213,7 +213,7 @@ The required event types are:
 
 | Command | Events |
 | --- | --- |
-| Ask | `ask.confirmed` or `ask.cancelled`, followed by `ask.delivery` when a delivery outcome is observed |
+| Ask | `ask.compiled` when a candidate exists; then `ask.confirmed` or `ask.cancelled` as graded observations; `ask.delivery` when a delivery outcome is observed; `ask.submission` when a later submission is observed by a hook or attested by the person |
 | Eval | `eval.completed` |
 | Seal | `seal.created` or `seal.refused` |
 

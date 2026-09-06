@@ -10,11 +10,13 @@ def payload(prompt, session="s1"):
 
 def test_capture_stores_only_rf_invocations(repo):
     ws = workspace.resolve(cwd=repo).ensure()
-    assert sessions.capture(ws, "claude-code", payload("hello")) is None
+    other = sessions.capture(ws, "claude-code", payload("hello there"))
+    assert other["sha256"] and other["bytes"] == 11 and "prompt" not in other  # digest only, never the text
+    assert "hello there" not in (ws.rf_dir / "sessions/claude-code/s1/prompts.jsonl").read_text()
     rec = sessions.capture(ws, "claude-code", payload("/rf:ask fix the login bug"))
     assert rec["sha256"] and rec["bytes"] == len("/rf:ask fix the login bug")
     stored = (ws.rf_dir / "sessions/claude-code/s1/prompts.jsonl").read_text().splitlines()
-    assert len(stored) == 1 and json.loads(stored[0])["prompt"] == "/rf:ask fix the login bug"
+    assert len(stored) == 2 and json.loads(stored[1])["prompt"] == "/rf:ask fix the login bug"
 
 
 def test_find_invocation_matches_argument_bytes(repo):

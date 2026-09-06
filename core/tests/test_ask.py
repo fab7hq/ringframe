@@ -19,23 +19,68 @@ def stage(ws, source=b"fix the login bug\n", prompt=b"Fix the login bug.\n"):
     return d
 
 
-def confirm(ws, **kw):
-    args = dict(staged=stage(ws), title="Login fix", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
+def compile_(ws, **kw):
+    args = dict(title="Login fix", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
     args.update(kw)
-    return ask.confirm(ws, **args)
+    args.setdefault("staged", stage(ws))
+    return ask.compile(ws, **args)
 
 
-def test_confirm_publishes_two_artifacts_and_one_event(repo):
+def confirm(ws, **kw):
+    out = compile_(ws, **kw)
+    ask.confirm(ws, out["ask_id"])
+    return out
+
+
+def test_compile_publishes_two_artifacts_and_one_event(repo):
     ws = workspace.resolve(cwd=repo).ensure()
     sessions.capture(ws, "claude-code", {"session_id": "s1", "prompt": "/rf:ask fix the login bug"})
-    out = confirm(ws)
+    out = compile_(ws)
     assert out["ask_id"].startswith("ask_") and out["delivery_mode"] == "native_dispatch" and out["source_verified"] == "exact"
     assert (ws.rf_dir / out["prompt"]["path"]).read_bytes() == b"Fix the login bug.\n"
     assert not (ws.rf_dir / "tmp" / "stage-1").exists()
     ev, = store.events(ws)
-    assert ev["type"] == "ask.confirmed" and ev["id"] == out["ask_id"]
+    assert ev["type"] == "ask.compiled" and ev["id"] == out["ask_id"]
     assert ev["data"]["host"]["profile_id"] == "claude-code@2.1" and ev["data"]["host"]["workspace"]["rule"] == "git_toplevel"
     assert store.verify(ws) == []
+    assert ask.show(ws)["outcome"] == "compiled" and ask.show(ws)["submission"] == "unobserved"
+
+
+def test_confirm_and_cancel_are_appended_graded_events(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = compile_(ws)
+    rec = ask.confirm(ws, out["ask_id"])
+    assert rec["confirmation"] == {"observed_by": "skill", "surface": "AskUserQuestion"}
+    with pytest.raises(LedgerError, match="ask.already_confirmed"):
+        ask.confirm(ws, out["ask_id"])
+    later = ask.cancel(ws, out["ask_id"], reason="changed my mind", attributed=True)
+    assert later["cancellation"] == {"attributed_by": "human:local-user"}
+    assert [e["type"] for e in store.events(ws)] == ["ask.compiled", "ask.confirmed", "ask.cancelled"]
+    assert ask.show(ws)["outcome"] == "cancelled" and store.verify(ws) == []
+    with pytest.raises(LedgerError, match="ask.not_compiled"):
+        ask.confirm(ws, "ask_nope")
+
+
+def test_submission_observed_from_capture_and_attributed_by_human(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = compile_(ws, host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
+    other = compile_(ws, staged=stage(ws, prompt=b"Something else.\n"), title="Other", host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
+    # the person pastes the exact prompt; the hook captures its digest
+    rec = sessions.capture(ws, "codex", {"session_id": "c1", "prompt": "Fix the login bug.\n"})
+    sub = ask.submission_from_capture(ws, "codex", "c1", rec["sha256"])
+    assert sub["ask_id"] == out["ask_id"] and sub["state"] == "observed" and sub["observed_by"] == "hook:UserPromptSubmit"
+    assert ask.submission_from_capture(ws, "codex", "c1", rec["sha256"]) is None  # once only
+    assert ask.submission_from_capture(ws, "codex", "c1", "f" * 64) is None  # no match
+    assert ask.show(ws, ask_id=out["ask_id"])["submission"] == "observed"
+    att = ask.submitted(ws, other["ask_id"], as_modified=True)
+    assert att["state"] == "attributed" and att["as_modified"] is True and ask.show(ws, ask_id=other["ask_id"])["submission"] == "attributed"
+    assert store.verify(ws) == []
+
+
+def test_prompt_text_for_copy(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = compile_(ws)
+    assert ask.prompt_text(ws, out["ask_id"]) == "Fix the login bug.\n"
 
 
 def test_confirm_resolves_session_and_version_from_capture(repo):
@@ -50,9 +95,9 @@ def test_confirm_resolves_session_and_version_from_capture(repo):
     assert ask.delivery_from_hook(ws, hook(session="hook-session"))["state"] == "native_accepted"
 
 
-def test_confirm_without_capture_is_unverified(repo):
+def test_compile_without_capture_is_unverified(repo):
     ws = workspace.resolve(cwd=repo).ensure()
-    out = confirm(ws)
+    out = compile_(ws)
     assert out["source_verified"] == "unverified"
     assert store.events(ws)[0]["data"]["source_verified"] == "unverified"
 
@@ -62,10 +107,10 @@ def test_confirm_rejects_bad_staging_and_unknown_capability(repo):
     d = stage(ws)
     (d / "extra").write_text("x")
     with pytest.raises(LedgerError, match="ask.staged_dir"):
-        ask.confirm(ws, staged=d, title="t", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
+        ask.compile(ws, staged=d, title="t", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
     (d / "extra").unlink()
     with pytest.raises(LedgerError, match="ask.capability"):
-        ask.confirm(ws, staged=d, title="t", capability="native_goal", classification=CLS, route=ROUTE, host=HOST)
+        ask.compile(ws, staged=d, title="t", capability="native_goal", classification=CLS, route=ROUTE, host=HOST)
     assert store.events(ws) == [] and (d / "source.txt").exists()
 
 
@@ -74,13 +119,13 @@ def test_direct_route_with_effects_needs_explicit_request(repo):
     with pytest.raises(LedgerError, match="ask.route_policy"):
         confirm(ws, capability="native_direct", classification={**CLS, "effects": ["write"]})
     assert store.events(ws) == [] and not list((ws.rf_dir / "asks").iterdir())
-    out = ask.confirm(ws, staged=ws.rf_dir / "tmp" / "stage-1", title="Login fix", capability="native_direct",  # staging survived the refusal
+    out = ask.compile(ws, staged=ws.rf_dir / "tmp" / "stage-1", title="Login fix", capability="native_direct",  # staging survived the refusal
                       classification={**CLS, "effects": ["write"]}, route={**ROUTE, "explicit_direct_request": True}, host=HOST)
     assert out["delivery_mode"] == "native_dispatch"
     (ws.rf_dir / "tmp" / "stage-2").mkdir()
     (ws.rf_dir / "tmp" / "stage-2" / "source.txt").write_bytes(b"what does auth.ts do?")
     (ws.rf_dir / "tmp" / "stage-2" / "prompt.txt").write_bytes(b"Explain auth.ts.")
-    ask.confirm(ws, staged=ws.rf_dir / "tmp" / "stage-2", title="Q", capability="native_direct", classification={**CLS, "task": ["question"], "result": "answer", "effects": ["read"]}, route=ROUTE, host=HOST)
+    ask.compile(ws, staged=ws.rf_dir / "tmp" / "stage-2", title="Q", capability="native_direct", classification={**CLS, "task": ["question"], "result": "answer", "effects": ["read"]}, route=ROUTE, host=HOST)
 
 
 def test_invalid_classification_publishes_nothing(repo):
@@ -106,11 +151,13 @@ def test_unknown_host_falls_back_to_handoff(repo):
     assert "qualification" in " ".join(store.events(ws)[0]["data"]["limitations"]).lower()
 
 
-def test_cancel_keeps_both_artifacts(repo):
+def test_cancel_after_compile_keeps_both_artifacts(repo):
     ws = workspace.resolve(cwd=repo).ensure()
-    out = ask.cancel(ws, staged=stage(ws), title="t", capability="native_plan", classification=CLS, route=ROUTE, host=HOST, reason="changed mind")
-    ev, = store.events(ws)
-    assert ev["type"] == "ask.cancelled" and ev["data"]["reason"] == "changed mind" and "delivery_mode" not in ev["data"]
+    out = compile_(ws)
+    rec = ask.cancel(ws, out["ask_id"], reason="changed mind")
+    events = store.events(ws)
+    assert [e["type"] for e in events] == ["ask.compiled", "ask.cancelled"] and events[1]["data"]["reason"] == "changed mind"
+    assert rec["cancellation"] == {"observed_by": "skill"}
     assert (ws.rf_dir / out["source"]["path"]).exists() and (ws.rf_dir / out["prompt"]["path"]).exists()
 
 
@@ -147,7 +194,7 @@ def test_delivery_from_hook_ignores_other_sessions_tools_and_ambiguity(repo):
     (ws.rf_dir / "tmp" / "stage-1").mkdir()
     (ws.rf_dir / "tmp" / "stage-1" / "source.txt").write_bytes(b"a")
     (ws.rf_dir / "tmp" / "stage-1" / "prompt.txt").write_bytes(b"b")
-    ask.confirm(ws, staged=ws.rf_dir / "tmp" / "stage-1", title="second", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
+    ask.compile(ws, staged=ws.rf_dir / "tmp" / "stage-1", title="second", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
     assert ask.delivery_from_hook(ws, hook()) is None
     assert "ambiguous" in (ws.rf_dir / "sessions/claude-code/s1/delivery-skipped.jsonl").read_text()
 
@@ -173,7 +220,7 @@ def test_show_and_resolve(repo):
     (ws.rf_dir / "tmp" / "stage-2").mkdir()
     (ws.rf_dir / "tmp" / "stage-2" / "source.txt").write_bytes(b"a")
     (ws.rf_dir / "tmp" / "stage-2" / "prompt.txt").write_bytes(b"b")
-    b = ask.confirm(ws, staged=ws.rf_dir / "tmp" / "stage-2", title="Logout", capability="native_direct", classification=CLS, route=ROUTE, host={**HOST, "session_ref": "s2"})
+    b = ask.compile(ws, staged=ws.rf_dir / "tmp" / "stage-2", title="Logout", capability="native_direct", classification=CLS, route=ROUTE, host={**HOST, "session_ref": "s2"})
     with pytest.raises(NeedsInput) as e:
         ask.show(ws)
     assert {c["id"] for c in e.value.candidates} == {a["ask_id"], b["ask_id"]}

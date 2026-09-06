@@ -3,13 +3,13 @@ import pytest
 from ringframe import schema
 from ringframe.store import LedgerError
 
-BASE = {"schema": "ringframe.ledger/1", "event_id": "evt_1", "type": "ask.cancelled", "time": "2026-01-01T00:00:00.000Z",
+BASE = {"schema": "ringframe.ledger/1", "event_id": "evt_1", "type": "ask.compiled", "time": "2026-01-01T00:00:00.000Z",
         "id": "ask_1", "actor": {"kind": "human", "id": "u", "authority": "interactive"}, "links": []}
 REF = {"role": "source_intent", "path": "asks/ask_1/source.txt", "bytes": 1, "sha256": "a" * 64}
 
 
 def cancelled():
-    return {**BASE, "data": {"title": "t", "classification": {"task": ["plan"], "result": "plan", "interaction": "interactive",
+    return {**BASE, "data": {"delivery_mode": "native_dispatch", "title": "t", "classification": {"task": ["plan"], "result": "plan", "interaction": "interactive",
                                                                 "horizon": "session", "effects": ["read"]},
                              "selected_capability": "native_plan", "route_explanation": {"fits": "x", "alternatives": [], "continuation": "c", "effects": "e", "gaps": []},
                              "host": {"name": "claude-code", "version": "2.1.260", "surface": "native-tui", "session_ref": None,
@@ -53,4 +53,15 @@ def test_delivery_requires_mode_state_and_qualification():
 
 
 def test_every_event_type_has_a_required_key_list():
-    assert set(schema.REQUIRED) == {"ask.confirmed", "ask.cancelled", "ask.delivery", "eval.completed", "seal.created", "seal.refused"}
+    assert set(schema.REQUIRED) == {"ask.compiled", "ask.confirmed", "ask.cancelled", "ask.submission", "ask.delivery", "eval.completed", "seal.created", "seal.refused"}
+
+
+def test_confirmed_cancelled_and_submission_are_graded_observations():
+    schema.validate_event({**BASE, "type": "ask.confirmed", "data": {"confirmation": {"observed_by": "skill", "surface": "AskUserQuestion"}}})
+    schema.validate_event({**BASE, "type": "ask.cancelled", "data": {"cancellation": {"attributed_by": "human:local-user"}, "reason": "later"}})
+    schema.validate_event({**BASE, "type": "ask.submission", "data": {"state": "observed", "observed_by": "hook:UserPromptSubmit", "attributed_by": None,
+                                                                       "as_modified": False, "host": {"name": "claude-code", "session_ref": "s"}, "prompt_sha256": "a" * 64}})
+    with pytest.raises(LedgerError, match="data.state"):
+        schema.validate_event({**BASE, "type": "ask.submission", "data": {"state": "probably", "observed_by": None, "attributed_by": "human:x", "as_modified": False, "host": {}, "prompt_sha256": "a" * 64}})
+    with pytest.raises(LedgerError, match="data.confirmation"):
+        schema.validate_event({**BASE, "type": "ask.confirmed", "data": {}})
