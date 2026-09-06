@@ -107,3 +107,51 @@ def test_codex_plugin_and_marketplace_manifests():
         assert "allow_implicit_invocation: false" in policy
     ask_text = (codex / "skills/ask/SKILL.md").read_text()
     assert "request_user_input" in ask_text and "default_mode_request_user_input" in ask_text and "ringframe ask compile" in ask_text and "--handoff" in ask_text
+
+
+CODEX = ROOT / "plugins" / "codex"
+
+
+def test_codex_plugin_bundles_prompt_capture_hook():
+    plugin = json.loads((CODEX / ".codex-plugin/plugin.json").read_text())
+    assert plugin["hooks"] == "./hooks.json"
+    hooks = json.loads((CODEX / "hooks.json").read_text())["hooks"]
+    assert set(hooks) == {"UserPromptSubmit"}
+    for group in hooks["UserPromptSubmit"]:
+        for h in group["hooks"]:
+            assert h["type"] == "command" and "${PLUGIN_ROOT}" in h["command"]
+            script = CODEX / h["command"].split("${PLUGIN_ROOT}")[1].strip('"/')
+            assert script.exists() and script.stat().st_mode & stat.S_IXUSR
+
+
+def test_codex_hook_observes_handoff_submission(repo, tmp_path):
+    bin_dir = Path(_shim(tmp_path))
+    (bin_dir / "codex").write_text("#!/bin/sh\necho 'codex-cli 0.153.4'\n")
+    (bin_dir / "codex").chmod(0o755)
+    path = str(bin_dir) + os.pathsep + os.environ["PATH"]
+    env = {**os.environ, "PATH": path}
+
+    def hook(prompt):
+        payload = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "cx1", "turn_id": "t1", "transcript_path": None, "cwd": str(repo),
+                              "model": "gpt-5.6-terra", "permission_mode": "default", "prompt": prompt})
+        return subprocess.run([str(CODEX / "hooks/capture-prompt.sh")], input=payload, cwd=repo, capture_output=True, text=True, env=env)
+
+    assert hook("$rf:ask add a health endpoint").returncode == 0
+    captured = json.loads((repo / ".fab7/rf/sessions/codex/cx1/prompts.jsonl").read_text())
+    assert captured["host_version"] == "codex-cli 0.153.4" and captured["prompt"] == "$rf:ask add a health endpoint"
+    stage = repo / ".fab7/rf/tmp/stage-1"
+    stage.mkdir(parents=True)
+    (stage / "source.txt").write_text("add a health endpoint\n")
+    (stage / "prompt.txt").write_text("/plan Add a health endpoint.\n")
+    out = subprocess.run(["ringframe", "ask", "compile", "--staged", str(stage), "--title", "Health", "--capability", "native_plan",
+                          "--classification", json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}),
+                          "--route", json.dumps({"fits": "f", "alternatives": [], "continuation": "c", "effects": "e", "gaps": []}),
+                          "--host", json.dumps({"name": "codex", "surface": "native-tui"}), "--json"],
+                         cwd=repo, capture_output=True, text=True, env=env, check=True)
+    compiled = json.loads(out.stdout)
+    assert compiled["source_verified"] == "exact" and compiled["delivery_mode"] == "human_handoff"
+    confirmed = json.loads(subprocess.run(["ringframe", "ask", "confirm", "--ask", compiled["ask_id"], "--json"], cwd=repo, capture_output=True, text=True, env=env, check=True).stdout)
+    assert confirmed["confirmation"]["surface"] == "request_user_input"
+    assert hook("/plan Add a health endpoint.").returncode == 0  # the person pasted prompt.txt into the composer
+    shown = json.loads(subprocess.run(["ringframe", "ask", "show", "--json"], cwd=repo, capture_output=True, text=True, env=env, check=True).stdout)
+    assert shown["ask_id"] == compiled["ask_id"] and shown["submission"] == "observed"

@@ -74,11 +74,18 @@ def test_submission_observed_from_capture_and_attributed_by_human(repo):
     rec = sessions.capture(ws, "codex", {"session_id": "c1", "prompt": "Fix the login bug.\n"})
     sub = ask.submission_from_capture(ws, "codex", "c1", rec["sha256"])
     assert sub["ask_id"] == out["ask_id"] and sub["state"] == "observed" and sub["observed_by"] == "hook:UserPromptSubmit"
+    assert sub["match"] == "exact"
     assert ask.submission_from_capture(ws, "codex", "c1", rec["sha256"]) is None  # once only
+    # composers drop the trailing newline of a pasted file; that is still the same prompt
+    pasted = sessions.capture(ws, "codex", {"session_id": "c1", "prompt": "Something else."})
+    sub2 = ask.submission_from_capture(ws, "codex", "c1", pasted["sha256"])
+    assert sub2["ask_id"] == other["ask_id"] and sub2["match"] == "trailing_newline_dropped"
+    assert ask.show(ws, ask_id=other["ask_id"])["submission"] == "observed"
+    third = compile_(ws, staged=stage(ws, prompt=b"Third.\n"), title="Third", host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
     assert ask.submission_from_capture(ws, "codex", "c1", "f" * 64) is None  # no match
     assert ask.show(ws, ask_id=out["ask_id"])["submission"] == "observed"
-    att = ask.submitted(ws, other["ask_id"], as_modified=True)
-    assert att["state"] == "attributed" and att["as_modified"] is True and ask.show(ws, ask_id=other["ask_id"])["submission"] == "attributed"
+    att = ask.submitted(ws, third["ask_id"], as_modified=True)
+    assert att["state"] == "attributed" and att["as_modified"] is True and ask.show(ws, ask_id=third["ask_id"])["submission"] == "attributed"
     assert store.verify(ws) == []
 
 

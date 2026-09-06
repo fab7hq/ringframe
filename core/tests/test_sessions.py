@@ -50,3 +50,13 @@ def test_prune_removes_old_sessions(repo):
     removed = sessions.prune(ws, "7d")
     assert removed == ["claude-code/old"] and not old.exists()
     assert sessions.parse_duration("36h") == 36 * 3600
+
+
+def test_codex_dollar_prefix_is_an_invocation_too(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    rec = sessions.capture(ws, "codex", payload("$rf:ask fix the login bug", "c1"), host_version="codex-cli 0.153.4")
+    assert rec["prompt"] == "$rf:ask fix the login bug"
+    assert sessions.source_verified(ws, "codex", "c1", b"fix the login bug\n") == ("exact", None)
+    assert sessions.resolve_session(ws, "codex", b"fix the login bug") == {"session_ref": "c1", "host_version": "codex-cli 0.153.4"}
+    plain = sessions.capture(ws, "codex", payload("$rfx not ours", "c1"))
+    assert "prompt" not in plain

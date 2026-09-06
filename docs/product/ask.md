@@ -280,9 +280,12 @@ confirmed -> ask.delivery: native_accepted | handoff_ready
 cancelled -> no delivery
 ~~~
 
-For `handoff_ready`, submission remains `unobserved` unless a separately qualified
-native observation later proves it. A user statement may be recorded as an
-attributed human observation, never as host evidence.
+For `handoff_ready`, submission remains `unobserved` until the host's prompt
+hook captures a user prompt whose bytes equal the compiled `prompt.txt` (a
+pasted file loses its trailing newline; that form matches too and the record
+says so). That appends `ask.submission observed`. A user statement
+(`ringframe ask submitted`) is recorded as an attributed human observation,
+never as host evidence.
 
 `native_accepted` proves only that the qualified surface accepted the dispatch
 or activation. It does not prove instruction following, execution, completion,
@@ -443,7 +446,8 @@ no qualified activation
   -> show the prompt.txt path
   -> append ask.delivery with handoff_ready
   -> user copies and submits it in the native TUI
-  -> submission remains unobserved
+  -> the prompt hook matches the pasted bytes -> ask.submission observed
+  -> without a hook capture, submission remains unobserved
 ~~~
 
 The harness decides how to research, plan, use subagents, ask follow-up

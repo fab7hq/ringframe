@@ -10,7 +10,7 @@ from ringframe import digest
 from ringframe.store import canonical
 from ringframe.workspace import Workspace
 
-PREFIX = "/rf:"
+PREFIXES = ("/rf:", "$rf:")  # Claude Code slash skill, Codex dollar skill
 
 
 def now() -> str:
@@ -29,7 +29,7 @@ def log(ws: Workspace, host: str, session: str, name: str, record: dict) -> None
 
 
 def capture(ws: Workspace, host: str, payload: dict, host_version: str | None = None) -> dict | None:
-    """Store a `/rf:` invocation in full; every other prompt as digest and byte count only (never its text)."""
+    """Store a `/rf:` or `$rf:` invocation in full; every other prompt as digest and byte count only (never its text)."""
     prompt = payload.get("prompt")
     session = payload.get("session_id")
     if not isinstance(prompt, str) or not prompt or not session:
@@ -37,7 +37,7 @@ def capture(ws: Workspace, host: str, payload: dict, host_version: str | None = 
     data = prompt.encode("utf-8")
     rec = {"session_id": session, "sha256": digest.sha256_bytes(data), "bytes": len(data), "cwd": payload.get("cwd"),
            "permission_mode": payload.get("permission_mode"), "host_version": (host_version or "").strip() or None}
-    if prompt.startswith(PREFIX):
+    if prompt.startswith(PREFIXES):
         rec["prompt"] = prompt
     log(ws, host, session, "prompts.jsonl", rec)
     return rec
@@ -58,8 +58,8 @@ def source_verified(ws: Workspace, host: str, session: str | None, source: bytes
 
 
 def _matches(prompt: str, want: str) -> bool:
-    _, _, args = prompt.partition(" ")
-    return prompt.startswith(PREFIX + "ask") and args.removesuffix("\n") == want
+    head, _, args = prompt.partition(" ")
+    return head in {p + "ask" for p in PREFIXES} and args.removesuffix("\n") == want
 
 
 def resolve_session(ws: Workspace, host: str, source: bytes, window_s: int = 1800) -> dict | None:

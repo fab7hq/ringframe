@@ -168,14 +168,25 @@ def submitted(ws, ask_id: str, as_modified=False, actor=None) -> dict:
 
 
 def submission_from_capture(ws, host: str, session: str, sha256: str) -> dict | None:
-    """A later user prompt whose digest equals one compiled prompt.txt: host-observed submission. Unique match only, once per Ask."""
-    hits = [(k, v) for k, v in _by_id(ws).items() if v["compiled"] and v["compiled"]["data"]["prompt"]["sha256"] == sha256
-            and not any(s["data"]["state"] == "observed" for s in v["submissions"])]
+    """A later user prompt whose bytes equal one compiled prompt.txt: host-observed submission.
+
+    Composers drop a file's trailing newline on paste, so that form matches too (recorded as such).
+    Unique match only, once per Ask."""
+    hits = []
+    for ask_id, v in _by_id(ws).items():
+        if not v["compiled"] or any(s["data"]["state"] == "observed" for s in v["submissions"]):
+            continue
+        ref = v["compiled"]["data"]["prompt"]
+        if ref["sha256"] == sha256:
+            hits.append((ask_id, "exact"))
+        elif digest.sha256_bytes((ws.rf_dir / ref["path"]).read_bytes().rstrip(b"\n")) == sha256:
+            hits.append((ask_id, "trailing_newline_dropped"))
     if len(hits) != 1:
         return None
-    ask_id, _ = hits[0]
+    ask_id, match = hits[0]
     return _append(ws, "ask.submission", ask_id, {"state": "observed", "observed_by": "hook:UserPromptSubmit", "attributed_by": None,
-                                                  "as_modified": False, "host": {"name": host, "session_ref": session}, "prompt_sha256": sha256})
+                                                  "as_modified": False, "host": {"name": host, "session_ref": session}, "prompt_sha256": sha256,
+                                                  "match": match})
 
 
 def prompt_text(ws, ask_id: str) -> str:
