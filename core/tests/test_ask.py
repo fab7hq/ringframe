@@ -22,7 +22,8 @@ def stage(ws, source=b"fix the login bug\n", prompt=b"Fix the login bug.\n"):
 def compile_(ws, **kw):
     args = dict(title="Login fix", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
     args.update(kw)
-    args.setdefault("staged", stage(ws))
+    if "staged" not in args:
+        args["staged"] = stage(ws)
     return ask.compile(ws, **args)
 
 
