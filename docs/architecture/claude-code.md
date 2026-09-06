@@ -24,6 +24,9 @@ receipt exists for same-turn continuation. Any error from `EnterPlanMode`
 downgrades to `delivery_failed` plus a human handoff that names the prompt
 file and never implies the prompt was submitted.
 
-Qualified host tuple for `native_plan`: Claude Code 2.1.260 through the Agent
-SDK (`ringframe-ask-plan-q04`), with one native TUI feasibility observation.
-Other versions degrade to the unknown profile and human handoff.
+Qualified host tuple: Claude Code 2.1.263 through the Agent SDK, Sonnet 5 at
+low effort (`ringframe-ask-ledger-q04`: three of three attempts persisted the
+exact intent after native confirmation, entered Plan mode, and recorded the
+hook receipt with a clean ledger). `EnterPlanMode` activation itself was first
+qualified in `ringframe-ask-plan-q04`. Other host versions degrade to the
+unknown profile and human handoff.
