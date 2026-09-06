@@ -1,36 +1,54 @@
 # RingFrame Seal
 
-Seal records an attributable decision about a freshly evaluated, unchanged
-subject when a person or system needs to rely on that decision.
+Seal binds one fresh Eval on an unchanged subject to one authorized
+disposition and writes a receipt. It records a decision; it merges, publishes,
+deploys, and certifies nothing.
 
-# Status
+~~~text
+/rf:seal [eval reference] accepted|rejected|deferred|abandoned
 
-This document is intentionally a placeholder. Seal will be designed in detail
-after the Ask and Eval contracts establish what is being decided and which
-evidence is eligible.
+$rf:seal ...        (planned)
+~~~
 
-# Preserved direction
+# Checks, all fail-closed
 
-- Seal is explicit and optional.
-- It binds one exact subject, one completed Eval, one disposition, and one
-  authorized decision actor.
-- It rechecks subject identity and evidence freshness before writing a receipt.
-- It preserves the Eval verdict even when the owner knowingly accepts risk.
-- It is deterministic and creates no external release, merge, deployment,
-  trading, publishing, or other consequential effect.
-- Missing authority, changed subject identity, or stale evidence fails closed
-  without a Seal receipt.
+| code | check |
+| --- | --- |
+| `seal.eval_missing` | the Eval record exists and its ledger line is present |
+| `seal.subject_changed` | the subject re-digests to the value recorded after the Eval ran |
+| `seal.stale` | the Eval is younger than its definition's `freshness.max_age` |
+| `seal.authority_missing` | an interactive human, or a valid authorization for a non-human actor |
+| `seal.verdict_conflict` | `accepted` with a verdict other than `aligned` needs at least one `--acknowledge` |
+| `seal.duplicate` | no earlier receipt for the same Eval and disposition |
 
-# Design work remaining
+Any failure appends `seal.refused` with the codes and writes no receipt. The
+Eval verdict is copied onto the receipt unchanged even when the owner
+knowingly accepts risk.
 
-The detailed command definition must specify:
+# Authority
 
-1. disposition and authority models;
-2. subject and Eval freshness rules;
-3. acknowledged-risk and limitation handling;
-4. atomic receipt creation and failure behavior;
-5. downstream verification and consumption; and
-6. the immutable Seal receipt schema.
+An interactive human is authorized by being present. A non-human actor
+(`agent:` or `policy:`) needs `.fab7/rf/authorizations/<actor_id>.json`
+naming who granted it, the allowed dispositions, Eval verdicts, and subject
+kinds, and an expiry.
 
-Until that work is complete, [the product definition](product.md) remains the
-authority for Seal semantics.
+# Receipt
+
+`seals/<seal_id>.json` holds the Eval id, digest, and verdict; the subject
+kind, reference, and digest; the disposition; acknowledged risks; the actor
+and authority; the Eval's limitations plus Seal's own; and the time. The
+ledger gets one `seal.created` line with a `seals` link to the Eval.
+
+# Downstream
+
+`ringframe seal check --seal <seal_id> --json` re-verifies the receipt, the
+Eval record, and the subject now, and prints `fresh: true` or `false` with
+codes. Exit `0` only when fresh. A gate that relies on a Seal reads it this
+way.
+
+# Command line
+
+~~~text
+ringframe seal create --eval <eval_id> --disposition <d> [--acknowledge <text>]... [--actor kind:id --authority preauthorized] --json
+ringframe seal check --seal <seal_id> --json
+~~~

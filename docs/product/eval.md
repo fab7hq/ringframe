@@ -1,40 +1,90 @@
 # RingFrame Eval
 
-Eval is RingFrame's product center. It independently evaluates one exact
-subject against an Ask's Eval blueprint or another explicit contract.
+Eval independently evaluates one exact subject against a definition frozen
+before any outcome-dependent evidence is collected. It is read-only. The
+harness's own self-review is evidence with a source, never the verdict.
 
-# Status
+~~~text
+/rf:eval [ask reference] [subject]
 
-This document is intentionally a placeholder. Detailed design will follow
-after the Ask contract and its generated Eval blueprint are validated.
+$rf:eval [ask reference] [subject]        (planned)
+~~~
 
-# Preserved direction
+# Subject
 
-- Freeze the evaluation definition before collecting outcome-dependent
-  evidence.
-- Bind the evaluation to an exact, digestible subject.
-- Keep deterministic checks, semantic graders, native reviews, external
-  observations, and human observations separately attributed.
-- Evaluate every obligation and forbidden effect with explicit coverage.
-- Return `aligned`, `drifted`, or `incomplete`; missing evidence never becomes
-  success.
-- Remain read-only. Remediation requires native work and, when appropriate, a
-  new explicit Ask.
-- Treat the executing harness's self-review as evidence, not as RingFrame's
-  final verdict.
+One immutable, digestible thing:
 
-# Design work remaining
+| kind | reference | digest |
+| --- | --- | --- |
+| `git_commit` | commit id | tree hash of the commit |
+| `worktree` | absolute root | SHA-256 over sorted path, mode, and content digest of tracked and untracked non-ignored files |
+| `file_set` | comma-separated globs | SHA-256 over sorted path and content digests |
+| `artifact` | file path | SHA-256 of the file |
 
-The detailed command definition must specify:
+The digest is taken before evidence collection and again after. A change
+between the two makes the verdict `incomplete` regardless of evidence.
 
-1. how Ask-generated blueprints become frozen Eval definitions;
-2. subject identity and snapshot rules;
-3. deterministic, semantic, external, and human evidence contracts;
-4. grader independence, calibration, disagreement, and reliability;
-5. coverage and aggregate verdict rules;
-6. evaluation cost, latency, and freshness limits;
-7. comparison against untreated native baselines; and
-8. the immutable Eval record schema.
+# Definition
 
-Until that work is complete, [the product definition](product.md) remains the
-authority for Eval semantics.
+A JSON document, frozen with `ringframe eval freeze` before anything runs:
+
+~~~json
+{
+  "schema": "ringframe.eval-definition/1",
+  "requirements": [
+    { "id": "R1", "text": "tests pass", "required": true,
+      "evidence": [ { "kind": "command", "run": ["uv", "run", "pytest"], "pass_when": { "exit_code": 0 } } ] },
+    { "id": "R2", "text": "a person agrees the behaviour matches", "required": true,
+      "evidence": [ { "kind": "attributed", "source": "human:local-user" } ] }
+  ],
+  "forbidden_effects": [
+    { "id": "F1", "text": "no ledger tracked by Git",
+      "evidence": [ { "kind": "command", "run": ["sh", "-c", "test -z \"$(git ls-files .fab7)\""], "pass_when": { "exit_code": 0 } } ] }
+  ],
+  "freshness": { "max_age": "PT24H" }
+}
+~~~
+
+`command` evidence is run by the CLI in the subject root; commands are
+caller-chosen and RingFrame does not judge them. `attributed` evidence is
+supplied, not produced: an observation document naming `requirement`,
+`source`, `scope`, `time`, `statement`, `outcome`, and `limitations`. The
+native harness's review enters only this way, with a `native-review:` source.
+
+Freezing writes `evals/<eval_id>.definition.json` and returns the id and
+digest. `eval run` refuses a definition whose bytes changed.
+
+# Verdict
+
+Each requirement is `covered-pass`, `covered-fail`, `uncovered`, or
+`indeterminate` (a command that timed out or could not start). The verdict is
+computed, never judged:
+
+- `aligned`: every required requirement and every forbidden-effect check is
+  `covered-pass`, and the subject digest is unchanged;
+- `drifted`: any required requirement or forbidden-effect check is
+  `covered-fail`;
+- `incomplete`: anything else, including a subject that changed during the run.
+
+Missing evidence never becomes success.
+
+# Record
+
+`evals/<eval_id>.json` holds the basis (Ask id and prompt digest, or an
+explicit contract), the definition reference and digest, the subject with
+both digests, every requirement with its evidence and status, the verdict,
+freshness, and limitations. The ledger gets one `eval.completed` line with an
+`evaluates` link to the Ask when there is one.
+
+# Command line
+
+~~~text
+ringframe eval freeze --ask <ask_id> | --contract <file> --subject-kind <kind> --subject-ref <ref> --definition @<file> --json
+ringframe eval run --eval <eval_id> [--definition-sha256 <hex>] [--observation @<file>]... --json
+~~~
+
+# Planned
+
+Model graders, calibration and disagreement handling, and comparison against
+an untreated native baseline inside Eval wait until a frozen comparison shows
+the Ask treatment beats the untreated prompt on the same task and stratum.
