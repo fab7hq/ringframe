@@ -8,8 +8,10 @@ observes that submission.
 
 Prerequisites: `uv tool install ringframe`, then
 `codex features enable default_mode_request_user_input` (the confirmation
-tool outside Plan mode) and `codex features enable hooks` (lifecycle hooks
-from `hooks.json`).
+tool outside Plan mode). Codex loads the plugin's bundled `hooks.json` but
+runs the hook only after you trust it: open `/hooks` in Codex and trust the
+`rf@ringframe` UserPromptSubmit hook (Codex records its hash under
+`hooks.state` in `config.toml`). Until then submission stays `unobserved`.
 
 ~~~text
 $rf:ask <intent>
@@ -34,9 +36,10 @@ request in the route.
 
 Status: implemented and covered by unit tests (`core/tests/test_plugin.py`,
 `test_profiles.py`, `test_ask.py`, `test_sessions.py`), **not qualified**.
-Open questions for the Codex qualification: whether Codex loads the
-plugin-bundled `hooks.json` and what trust prompt it shows; whether
-`request_user_input` is available to the skill with the feature enabled;
-whether the `$rf:ask` invocation reaches the hook with the exact bytes. Until
-that qualification passes, treat Codex as unsupported and expect human handoff
-with unobserved submission.
+Confirmed without model calls on codex-cli 0.153.4: the plugin installs from
+this repository's marketplace, the three skills are listed, and the bundled
+hook is discovered (untrusted until trusted). Still open for the Codex
+qualification: whether `request_user_input` is available to the skill with the
+feature enabled, and whether the `$rf:ask` invocation reaches the hook with the
+exact bytes. Until that qualification passes, treat Codex as unsupported and
+expect human handoff with unobserved submission.

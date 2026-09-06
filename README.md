@@ -25,9 +25,9 @@ claude plugin install rf@ringframe
 
 # Codex (handoff: RingFrame compiles and confirms, you submit the prompt)
 codex features enable default_mode_request_user_input
-codex features enable hooks
 codex plugin marketplace add fab7hq/ringframe
 codex plugin add rf@ringframe
+# then, inside Codex, trust the rf@ringframe hook under /hooks
 ~~~
 
 The plugin's skills and hooks call `ringframe`; without it they do nothing.
