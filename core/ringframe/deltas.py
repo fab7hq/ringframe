@@ -77,6 +77,12 @@ def _matches(entry: dict, classification: dict) -> bool:
     return True
 
 
+def validate_concerns(concerns, domain: str = DEFAULT_DOMAIN) -> None:
+    vocab = set(load_practice_catalog(domain)["concerns"])
+    unknown = [c for c in (concerns or []) if c not in vocab]
+    _check(not unknown, f"unknown concern(s) {unknown}; domain {domain} knows {sorted(vocab)}")
+
+
 def render(ws, profile: dict, capability: str, classification: dict, *, statuses=("qualified",), domain: str = DEFAULT_DOMAIN) -> dict:
     """Deterministic delta block for one Ask: host lines for (profile.host, capability), then one practice paragraph."""
     # ---- host layer
@@ -87,10 +93,8 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
         host_block.update(catalog_sha256=config.sha256_of(cat), deltas=[e["id"] for e in chosen], text="\n".join(e["text"].strip() for e in chosen))
     # ---- practice layer
     shipped = load_practice_catalog(domain)
-    vocab = set(shipped["concerns"])
     concerns = list(classification.get("concerns", []))
-    unknown = [c for c in concerns if c not in vocab]
-    _check(not unknown, f"unknown concern(s) {unknown}; domain {domain} knows {sorted(vocab)}")
+    validate_concerns(concerns, domain)
     merged = effective(ws, domain)
     cap_wants_subagents = bool(profile.get("subagents"))
     core, situational = [], []

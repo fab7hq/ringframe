@@ -44,12 +44,15 @@ effects). Codex capabilities in this profile:
 
 ## 2. Compile and persist before asking
 
-Write the smallest useful prompt for the selected capability, starting from
-the exact intent and adding only instructions that earn their place. Then:
+Then:
 
 1. Write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
-   `.fab7/rf/tmp/stage-<nonce>/prompt.txt` (the compiled prompt, with the
-   `/plan ` or `/goal ` prefix when required, nothing else).
+   `.fab7/rf/tmp/stage-<nonce>/body.txt`: the smallest task-specific prompt
+   derived from the exact intent, naming the artifacts, paths, and constraints
+   the intent names and nothing else. Do not add the `/plan ` or `/goal `
+   prefix and do not add standing rules (assumptions, scope, verification,
+   style): the CLI renders `prompt.txt` as prefix + body + its delta catalogs
+   and records which rules it added.
 2. Only after both files exist, run one command:
    `ringframe ask compile --staged <dir> --title "<short title>"
    --capability <id> --classification '<json>' --route '<json>' --host
@@ -61,8 +64,12 @@ the exact intent and adding only instructions that earn their place. Then:
    strings stay strings):
 
    ~~~json
-   {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}
+   {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]}
    ~~~
+
+   `concerns` is optional: a list from `api_surface auth data_migration
+   concurrency performance refactor dependency_change ui cli tests_only
+   operate` naming what the intent touches; omit it when none applies.
 
    `task` items from `question research clarify plan implement diagnose review
    operate document`; `result` one of `answer plan workspace_change evidence

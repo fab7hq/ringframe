@@ -122,7 +122,7 @@ def test_confirm_rejects_bad_staging_and_unknown_capability(repo):
         ask.compile(ws, staged=d, title="t", capability="native_plan", classification=CLS, route=ROUTE, host=HOST)
     (d / "extra").unlink()
     with pytest.raises(LedgerError, match="ask.capability"):
-        ask.compile(ws, staged=d, title="t", capability="native_goal", classification=CLS, route=ROUTE, host=HOST)
+        ask.compile(ws, staged=d, title="t", capability="native_review", classification=CLS, route=ROUTE, host=HOST)
     assert store.events(ws) == [] and (d / "source.txt").exists()
 
 
@@ -314,3 +314,35 @@ def test_ambiguous_submission_prefers_the_delivered_ask_and_otherwise_records_no
     rec2 = sessions.capture(ws, "codex", {"session_id": "s-three", "prompt": "Fix the login bug."})
     assert ask.submission_from_capture(ws, "codex", "s-three", rec2["sha256"]) is None  # two delivered candidates: no attribution
     assert store.verify(ws) == []
+
+
+def test_compile_renders_prompt_from_body_and_records_compiler_provenance(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    ws = workspace.resolve(cwd=repo).ensure()
+    sessions.capture(ws, "codex", {"session_id": "cg", "prompt": "$rf:ask keep checkout fast"}, host_version="codex-cli 0.153.4")
+    d = ws.rf_dir / "tmp" / "stage-body"
+    d.mkdir(parents=True)
+    (d / "source.txt").write_bytes(b"keep checkout fast\n")
+    (d / "body.txt").write_bytes(b"Run plans/checkout-perf, every item in order.\n")
+    cls = {"task": ["implement"], "result": "continuing_objective", "interaction": "approval_gated", "horizon": "persistent", "effects": ["write"], "concerns": ["performance"]}
+    out = compile_(ws, staged=d, title="Checkout goal", capability="native_goal", host={"name": "codex", "surface": "native-tui"}, classification=cls)
+    text = ask.prompt_text(ws, out["ask_id"])
+    assert text.startswith("/goal Run plans/checkout-perf, every item in order.\n")  # host prefix + body, the CLI added the prefix
+    assert "measure first" in text and "KISS" not in text and "Knuth" not in text  # performance concern selected the directive, never the name
+    ev = [e for e in store.events(ws) if e["type"] == "ask.compiled"][-1]
+    comp = ev["data"]["compiler"]
+    assert comp["source"] == "body" and comp["host"]["deltas"] == [] and "practice.knuth" in comp["practice"]["selected"]
+    assert comp["practice"]["matched_concerns"] == ["performance"] and len(comp["practice"]["shipped_sha256"]) == 64
+    assert store.verify(ws) == []
+    with pytest.raises(LedgerError, match="ask.staged_dir"):
+        d2 = stage(ws)  # prompt.txt and body.txt together are ambiguous
+        (d2 / "body.txt").write_bytes(b"x\n")
+        compile_(ws, staged=d2)
+
+
+def test_compile_rejects_unknown_concern_before_writing(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    ws = workspace.resolve(cwd=repo).ensure()
+    with pytest.raises(LedgerError, match="ask.classification"):
+        compile_(ws, classification={**CLS, "concerns": ["telepathy"]})
+    assert not (ws.rf_dir / "asks").exists() or not any((ws.rf_dir / "asks").iterdir())

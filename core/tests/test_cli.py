@@ -163,3 +163,17 @@ def test_module_entrypoint_and_version():
     cp = subprocess.run([sys.executable, "-m", "ringframe", "--version"], capture_output=True, text=True,
                         env={**os.environ, "PYTHONPATH": "core"})
     assert cp.returncode == 0 and cp.stdout.strip() == "ringframe 0.0.1"
+
+
+def test_deltas_commands(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    code, out, _ = run(repo, "deltas", "list", "--host", "codex", "--capability", "native_goal", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and [e["id"] for e in out["host"]] == ["codex.native_goal.item_loop", "codex.native_goal.terminal_condition"]
+    assert all(e["status"] == "candidate" for e in out["host"])
+    code, out, _ = run(repo, "deltas", "list", "--effective", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["practice.kiss"]["layer"] == "shipped"
+    cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]})
+    code, out, _ = run(repo, "deltas", "render", "--host", "codex", "--host-version", "codex-cli 0.153.4", "--capability", "native_plan", "--classification", cls, "--json", monkeypatch=monkeypatch)
+    assert code == 0 and "practice.hyrum" in out["practice"]["selected"] and out["text"]
+    code, text, _ = run(repo, "deltas", "render", "--host", "codex", "--host-version", "codex-cli 0.153.4", "--capability", "native_plan", "--classification", cls, monkeypatch=monkeypatch)
+    assert code == 0 and "observable behaviour" in text

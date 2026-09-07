@@ -7,7 +7,7 @@ import sys
 import tarfile
 from pathlib import Path
 
-from ringframe import __version__, ask, evaluate, profiles, seal, sessions, store, workspace
+from ringframe import __version__, ask, config, deltas, evaluate, profiles, seal, sessions, store, workspace
 from ringframe.ask import NeedsInput
 from ringframe.seal import Refused
 from ringframe.store import LedgerError
@@ -136,6 +136,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("ledger").add_subparsers(dest="sub", required=True).add_parser("verify")
 
+    dl = sub.add_parser("deltas").add_subparsers(dest="sub", required=True)
+    ls = dl.add_parser("list")
+    ls.add_argument("--host")
+    ls.add_argument("--capability")
+    ls.add_argument("--effective", action="store_true", help="merged practice deltas with the layer each came from")
+    ls.add_argument("--domain", default=deltas.DEFAULT_DOMAIN)
+    rd = dl.add_parser("render")
+    rd.add_argument("--host", required=True)
+    rd.add_argument("--host-version", default="")
+    rd.add_argument("--capability", required=True)
+    rd.add_argument("--classification", required=True)
+    rd.add_argument("--statuses", default="qualified", help="comma list, e.g. qualified,candidate (evaluation runs)")
+
     ss = sub.add_parser("sessions").add_subparsers(dest="sub", required=True)
     cap = ss.add_parser("capture")
     cap.add_argument("--host", required=True)
@@ -192,6 +205,16 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         if ns.sub == "show":
             return 0, ask.show(ws, ask_id=ns.ask, session=ns.session)
         return 0, ask.resolve(ws, session=ns.session, kind=ns.kind)
+    if ns.cmd == "deltas":
+        if ns.sub == "list":
+            if ns.effective:
+                return 0, deltas.effective(ws, ns.domain)
+            hosts = [ns.host] if ns.host else deltas.host_catalog_names()
+            entries = [e for h in hosts for e in deltas.load_host_catalog(h)["entries"] if not ns.capability or e["capability"] == ns.capability]
+            return 0, {"host": entries, "practice": deltas.load_practice_catalog(ns.domain)["entries"]}
+        prof = profiles.for_host({"name": ns.host, "version": ns.host_version})
+        rendered = deltas.render(ws, prof, ns.capability, _json_arg(ns.classification), statuses=tuple(ns.statuses.split(",")))
+        return 0, rendered if ns.json else rendered["text"]
     if ns.cmd == "eval":
         if ns.sub == "freeze":
             contract = _json_arg(ns.contract) if ns.contract else None
@@ -256,6 +279,9 @@ def main(argv=None) -> int:
         return 2
     except LedgerError as exc:
         _emit({"error": exc.code, "detail": exc.detail}, ns.json)
+        return 2
+    except config.ConfigError as exc:
+        _emit({"error": "config", "detail": str(exc)}, ns.json)
         return 2
     except Exception as exc:  # pragma: no cover - internal
         print(f"ringframe: internal error: {exc!r}", file=sys.stderr)

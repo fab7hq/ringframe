@@ -51,18 +51,14 @@ execute, or external effects. Then select one capability from this profile:
 Claude Code exposes no persistent goal capability on this surface; do not
 offer one.
 
-## 2. Compile the prompt
+## 2. Write the task body
 
-Write the smallest useful prompt for the selected capability. Start from the
-exact source intent. Add only instructions that earn their place against the
-untreated prompt, choosing from: make material assumptions visible; preserve
-behaviour outside the requested scope; prefer the smallest change consistent
-with the repository; make success conditions testable before material work;
-verify every requested path before completion; after plan approval, continue
-to the requested artifacts instead of stopping at the plan. For research that
-produces documents also: prefer current first-party sources, cite material
-claims, mark unverified behaviour, expand finite path templates. Omit anything
-Claude Code already does reliably.
+Write `body.txt`: the smallest task-specific prompt for the selected
+capability, derived from the exact source intent. Name the artifacts, paths,
+and constraints the intent names; add nothing the intent does not ask for.
+Do not add standing rules (assumptions, scope, verification, style): the CLI
+renders those from its delta catalogs and records which ones it added. Do not
+add the `/goal ` or other command prefix: the CLI adds the capability prefix.
 
 ## 3. Persist the candidate, then confirm natively
 
@@ -71,8 +67,9 @@ the turn ends early:
 
 1. Pick a nonce and, with the `Write` tool, create
    `.fab7/rf/tmp/stage-<nonce>/source.txt` containing exactly the source
-   intent above, and `.fab7/rf/tmp/stage-<nonce>/prompt.txt` containing only
-   the compiled prompt (no frontmatter, explanation, or copy instructions).
+   intent above, and `.fab7/rf/tmp/stage-<nonce>/body.txt` containing only
+   the task body from section 2 (no frontmatter, explanation, or copy
+   instructions). The CLI renders `prompt.txt` from it.
 2. Run, via `Bash`, `ringframe ask compile --staged <that directory> --title
    "<short human title>" --capability native_plan|native_direct
    --classification '<json>' --route '<json>' --host
@@ -113,7 +110,11 @@ exactly this vocabulary: `task` is a
    from `read write execute external_effect`. `--route '<json>'` with keys
    `fits`, `alternatives` (list of `{capability, reason}`), `continuation`,
    `effects`, `gaps` (list), and `explicit_direct_request` (boolean, true only
-   when the source intent asks to skip planning or act immediately). Do not
+   when the source intent asks to skip planning or act immediately).
+   `--classification` may also carry `concerns`: a list from `api_surface
+   auth data_migration concurrency performance refactor dependency_change ui
+   cli tests_only operate` naming what the intent touches; the CLI selects
+   situational practice directives from it. Omit it when none applies. Do not
    guess a version or session id: the CLI takes both from the plugin hook's
    capture of this very invocation.
 

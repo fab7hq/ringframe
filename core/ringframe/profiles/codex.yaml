@@ -70,4 +70,5 @@ capabilities:
     id: null
   limitations:
   - no delivery receipt exists for same-turn continuation
+subagents: true
 fallback: human_handoff

@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ringframe import digest, ids, profiles, schema, sessions, store
+from ringframe import config, deltas, digest, ids, profiles, schema, sessions, store
 from ringframe.store import LedgerError
 from ringframe.workspace import Workspace
 
@@ -61,23 +61,38 @@ def _normalize_classification(c) -> dict:
     return {k: [fix(x) for x in v] if isinstance(v, list) else fix(v) for k, v in c.items()}
 
 
-def _staged(staged: Path) -> tuple[bytes, bytes]:
+def _staged(staged: Path) -> tuple[bytes, bytes | None, bytes | None]:
+    """source.txt plus exactly one of prompt.txt (model-written prompt) or body.txt (task body; the CLI renders the prompt)."""
     names = sorted(p.name for p in Path(staged).iterdir()) if Path(staged).is_dir() else None
-    if names != ["prompt.txt", "source.txt"]:
-        raise LedgerError("ask.staged_dir", "must contain exactly source.txt and prompt.txt")
-    out = []
-    for name in ("source.txt", "prompt.txt"):
+    if names not in (["prompt.txt", "source.txt"], ["body.txt", "source.txt"]):
+        raise LedgerError("ask.staged_dir", "must contain exactly source.txt and one of prompt.txt or body.txt")
+    out = {}
+    for name in names:
         data = (Path(staged) / name).read_bytes()
         if not data or data.startswith(b"\xef\xbb\xbf"):
             raise LedgerError("ask.staged_file", f"{name} must be non-empty UTF-8 without BOM")
         data.decode("utf-8")
-        out.append(data)
-    return out[0], out[1]
+        out[name] = data
+    return out["source.txt"], out.get("prompt.txt"), out.get("body.txt")
+
+
+def _render_prompt(ws, profile, cap, capability, classification, body: bytes) -> tuple[bytes, dict]:
+    """prompt = capability prefix + body + rendered deltas (ADR-0008). Deterministic; provenance recorded on the event."""
+    try:
+        rendered = deltas.render(ws, profile, capability, classification)
+    except config.ConfigError as e:
+        raise LedgerError("ask.classification", str(e)) from None
+    text = (cap.get("prompt_prefix") or "") + body.decode("utf-8").rstrip("\n") + "\n"
+    if rendered["text"]:
+        text += rendered["text"].rstrip("\n") + "\n"
+    provenance = {"source": "body", "host": {k: v for k, v in rendered["host"].items() if k != "text"},
+                  "practice": {k: v for k, v in rendered["practice"].items() if k != "text"}}
+    return text.encode("utf-8"), provenance
 
 
 def compile(ws, *, staged, title, capability, classification, route, host, links=(), limitations=(), actor=None):
     """The only Ask operation that writes artifacts. Appends `ask.compiled`."""
-    source, prompt = _staged(staged)
+    source, prompt, body = _staged(staged)
     classification = _normalize_classification(classification)
     host = dict(host)
     provenance = {}
@@ -97,6 +112,13 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
     if gated and route.get("explicit_direct_request") is not True:
         raise LedgerError("ask.route_policy", f"{capability} with effects {sorted(gated)} requires route.explicit_direct_request=true, "
                           "which is only true when the source intent itself asks to skip planning or act immediately; otherwise select native_plan")
+    try:
+        deltas.validate_concerns(classification.get("concerns", []))
+    except config.ConfigError as e:
+        raise LedgerError("ask.classification", str(e)) from None
+    compiler = {"source": "prompt"}
+    if body is not None:
+        prompt, compiler = _render_prompt(ws, profile, cap, capability, classification, body)
     text = prompt.decode("utf-8")
     prefix = cap.get("prompt_prefix")
     if prefix and not text.startswith(prefix):
@@ -119,7 +141,7 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
                      "session_ref": host.get("session_ref"), "workspace": ws.describe(), **provenance,
                      "profile_id": profile["profile_id"], "profile_sha256": profiles.sha256(profile["profile_id"].split("@")[0] if profile["host"] else "unknown")},
             "source": source_ref, "prompt": prompt_ref, "source_verified": verified, "limitations": limitations,
-            "delivery_mode": cap["delivery_mode"]}
+            "delivery_mode": cap["delivery_mode"], "compiler": compiler}
     ev = _event("ask.compiled", ask_id, actor, data, links)
     schema.validate_event(ev)
     assert store.publish(ws, source_ref["path"], source, role="source_intent") == source_ref

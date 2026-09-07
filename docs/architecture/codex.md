@@ -16,9 +16,10 @@ runs the hook only after you trust it: open `/hooks` in Codex and trust the
 ~~~text
 $rf:ask <intent>
   UserPromptSubmit hook -> ringframe sessions capture --host codex   (exact invocation bytes)
-  skill: classify, compile; prompt.txt starts with "/plan " or "/goal " (goal <= 4000 chars)
-  skill: ringframe ask compile --staged ...          (ask.compiled; refuses a missing prefix or an
-                                                      over-long goal before any write)
+  skill: classify (task, result, effects, concerns); write source.txt + body.txt
+  skill: ringframe ask compile --staged ...          (renders prompt.txt = "/plan " or "/goal " + body +
+                                                      delta catalogs; refuses an over-long goal before any
+                                                      write; ask.compiled records which deltas rendered)
   skill: request_user_input                          (Proceed / other route / Cancel; free text revises)
   skill: ringframe ask confirm --ask | ask cancel --ask   (graded: observed by the skill,
                                                       surface request_user_input)

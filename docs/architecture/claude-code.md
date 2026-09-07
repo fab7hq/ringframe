@@ -9,9 +9,11 @@ every write.
 /rf:ask <intent>
   UserPromptSubmit hook -> ringframe sessions capture   (exact invocation bytes)
   skill: classify, compile, AskUserQuestion              (proceed / revise / other route / cancel)
-  skill: Write source.txt + prompt.txt to .fab7/rf/tmp/stage-*/
-  skill: ringframe ask compile --staged ...              (publishes artifacts, appends ask.compiled,
-                                                          source_verified = exact when bytes match the capture)
+  skill: Write source.txt + body.txt to .fab7/rf/tmp/stage-*/   (the task body only)
+  skill: ringframe ask compile --staged ...              (renders prompt.txt = prefix + body + delta catalogs,
+                                                          publishes artifacts, appends ask.compiled with
+                                                          compiler provenance; source_verified = exact when
+                                                          bytes match the capture)
   skill: AskUserQuestion answered -> ringframe ask confirm --ask | ask cancel --ask   (graded: observed by the skill)
   skill: EnterPlanMode
   PostToolUse hook -> ringframe ask delivery --from-hook (appends ask.delivery native_accepted from the receipt)
