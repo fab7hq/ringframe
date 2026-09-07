@@ -54,12 +54,13 @@ request in the route.
 
 Qualified host tuple: Codex CLI 0.153.4 through the app-server,
 `gpt-5.6-terra` at low effort, plugin hook trusted, feature
-`default_mode_request_user_input` enabled (`ringframe-ask-codex-q06`,
-candidate `0cee135`: three of three attempts obtained the CLI-selected
-directives, composed one brief, compiled the exact intent before the chooser,
+`default_mode_request_user_input` enabled (`ringframe-ask-codex-q07`,
+candidate `156a8bf`: three of three attempts obtained the CLI-selected
+directives, composed one brief with a labelled `Rules:` list (all eight
+supplied directives applied), compiled the exact intent before the chooser,
 confirmed through `request_user_input` with the rendered prompt, recorded a
 `handoff_ready` delivery with no submission claim, clean ledger, no project
-write; `compiler.source = composed` in all three). q05 passed on earlier
+write; `compiler.source = composed` in all three). q05 and q06 passed on earlier
 bytes; the TUI run card `ringframe-ask-codex-tui-q01` showed the paste path
 end to end. Not covered: revision and cancel branches, prompt quality. Other
 Codex versions degrade to the unknown profile and human handoff. Unit tests:

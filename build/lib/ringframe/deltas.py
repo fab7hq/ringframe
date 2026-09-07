@@ -91,7 +91,7 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
         cat = load_host_catalog(profile["host"])
         chosen = [e for e in cat["entries"] if e["capability"] == capability and e["status"] in statuses]
         host_block.update(catalog_sha256=config.sha256_of(cat), deltas=[e["id"] for e in chosen], text="\n".join(e["text"].strip() for e in chosen),
-                          entries=[{"id": e["id"], "text": e["text"].strip()} for e in chosen])
+                          entries=[{"id": e["id"], "label": e.get("label") or e["id"].rsplit(".", 1)[-1], "text": e["text"].strip()} for e in chosen])
     # ---- practice layer
     shipped = load_practice_catalog(domain)
     concerns = list(classification.get("concerns", []))
@@ -114,14 +114,45 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
     cap = int(shipped["render"]["core_cap"])
     kept_core, dropped = core[:cap], [e["id"] for _, _, e in core[cap:]]
     selected = [e for _, _, e in kept_core + situational]
-    practice_text = " ".join(" ".join(e["text"].split()) for e in selected)
+    heading = str(shipped["render"].get("heading", "Rules:"))
+    practice_text = (heading + "\n" + "\n".join(f"- {_label(e)}: {' '.join(e['text'].split())}" for e in selected)) if selected else ""
     layers = _layers(ws)
     practice_block = {"domain": domain, "shipped_sha256": config.sha256_of(shipped), "layers": [{k: v for k, v in l.items() if k != "entries"} for l in layers],
                       "selected": [e["id"] for e in selected], "matched_concerns": [c for c in concerns if any(c in e.get("concerns", []) for e in selected)],
                       "dropped_by_budget": dropped, "text": practice_text,
-                      "entries": [{"id": e["id"], "text": " ".join(e["text"].split())} for e in selected]}
+                      "entries": [{"id": e["id"], "label": _label(e), "text": " ".join(e["text"].split())} for e in selected]}
     text = "\n".join(part for part in (host_block["text"], practice_text) if part)
     return {"text": text, "host": host_block, "practice": practice_block}
+
+
+def _label(entry: dict) -> str:
+    return str(entry.get("label") or entry.get("principle") or entry["id"].rsplit(".", 1)[-1])
+
+
+def audit_composed(text: str, supplied: list[dict]) -> tuple[list[str], list[str]]:
+    """A composed prompt must end with a `Rules:` list whose every label names a supplied directive.
+
+    Returns (applied ids, omitted ids). Raises ConfigError on a missing list or an unknown label."""
+    lines = text.splitlines()
+    starts = [i for i, l in enumerate(lines) if l.strip().lower() == "rules:"]
+    _check(bool(starts), "composed prompt has no `Rules:` section")
+    by_label = {}
+    for e in supplied:
+        for key in {_label(e).lower(), (e.get("principle") or "").lower(), e["id"].lower()} - {""}:
+            by_label[key] = e["id"]
+    applied = []
+    for l in lines[starts[-1] + 1:]:
+        l = l.strip()
+        if not l:
+            continue
+        _check(l.startswith("- ") and ": " in l, f"rule line is not `- <labels>: <applied directive>`: {l[:60]!r}")
+        labels = [x.strip() for x in l[2:].split(": ", 1)[0].replace(" and ", ",").split(",") if x.strip()]
+        for lab in labels:
+            _check(lab.lower() in by_label, f"rule label {lab!r} names no supplied directive; supplied: {sorted({_label(e) for e in supplied})}")
+            if by_label[lab.lower()] not in applied:
+                applied.append(by_label[lab.lower()])
+    omitted = [e["id"] for e in supplied if e["id"] not in applied]
+    return applied, omitted
 
 
 def _check(ok: bool, message: str) -> None:
