@@ -11,30 +11,52 @@ Shell discipline: the shell is for `ringframe` only, exactly one plain
 `&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `codex --version`. Read
 the command's JSON output directly; never page or filter it.
 
-1. Resolve the Ask: `ringframe ask list --json` shows every Ask (id, title,
-   outcome); then `ringframe ask show --json` (add `--ask "<title or id>"`
-   when the person named one). Exit 3 lists candidates: show them and ask the
-   person to re-invoke `$rf:eval <title>`.
-2. Draft a JSON definition (`schema: ringframe.eval-definition/1`) from the
-   Ask's `prompt.txt`: `requirements` with `command` evidence (the project's
-   tests, linters, path checks) or `attributed` evidence
-   (`"source":"human:local-user"`), `forbidden_effects`, `freshness`
-   `{"max_age":"PT24H"}`. Do not invent requirements. Show it through
-   `request_user_input` (`Freeze and run` / `Revise` / `Cancel`).
-3. Write it to `.fab7/rf/tmp/eval-<nonce>.json`; `ringframe eval freeze --ask
-   <ask_id> --subject-kind git_commit --subject-ref <HEAD sha> --definition
-   @<file> --json`; collect attributed observations as JSON files; `ringframe
-   eval run --eval <eval_id> --definition-sha256 <sha> --observation
-   @<file>... --json`.
-Attributed evidence is the person's word, not yours. When a requirement's
-   evidence is `attributed`, ask the person with `request_user_input` (options
-   `Pass`, `Fail`, `Indeterminate`, free text allowed) and record their answer
-   **verbatim** as the observation's `statement` and their chosen outcome as
-   `outcome`; if they only picked an option, the statement is that option's
-   label. Never write your own findings into an attributed observation and
-   never decide an attributed outcome yourself. What you noticed while reading
-   the code goes into your report as context, labelled as your review; it is
-   not evidence and it does not change the verdict.
+1. Resolve the Ask. `ringframe ask list --json` shows every Ask (id, title,
+   outcome); then `ringframe ask show --json --ask "<id or title>"` for the
+   one the person means. When several Asks could be meant (exit 3, or the
+   person named none and more than one exists), present them through
+   `request_user_input` (one option per Ask, label = title) and let the
+   person choose. Never pick the newest because it is newest, and never ask
+   the person to re-invoke the skill instead of choosing.
+2. Draft the definition from the Ask's `prompt.txt` (open it at the printed
+   `prompt_path`) as JSON:
+   - `schema`: `ringframe.eval-definition/1`
+   - `requirements`: one per concrete obligation in the prompt, each
+     `{"id","text","required","evidence":[...]}` where evidence is
+     `{"kind":"command","run":[...],"pass_when":{"exit_code":0}}` for checks
+     the repository already trusts (tests, linters, path existence) or
+     `{"kind":"attributed","source":"human:local-user"}` for what only a
+     person can confirm.
+   - `forbidden_effects`: things the prompt said must not happen, same shape.
+   - `freshness`: `{"max_age":"PT24H"}` unless the person says otherwise.
+   Do not invent requirements the prompt did not state. Show the complete
+   definition through `request_user_input` (`Freeze and run (Recommended)` /
+   `Revise` / `Cancel`). Free text is a revision.
+3. Freeze, then run. Subject: the current commit (`git rev-parse HEAD`, kind
+   `git_commit`) unless the person names a worktree, file set, or artifact.
+   1. Write the definition to `.fab7/rf/tmp/eval-<nonce>.json` (under the
+      workspace root, never under this skill's directory).
+   2. `ringframe eval freeze --ask <ask_id> --subject-kind git_commit
+      --subject-ref <sha> --definition @<file> --json`; keep `eval_id` and
+      `definition.sha256`.
+   3. For each attributed requirement, ask the person through
+      `request_user_input` (options `Pass`, `Fail`, `Indeterminate`; free
+      text allowed) and write exactly
+      `{"requirement":"<id>","source":"human:local-user","scope":"<what they
+      looked at>","time":"<now, ISO 8601>","statement":"<their answer,
+      verbatim>","outcome":"pass|fail|indeterminate","limitations":[]}` to
+      `.fab7/rf/tmp/obs-<nonce>-<id>.json`. One file per requirement.
+   4. `ringframe eval run --eval <eval_id> --definition-sha256 <sha>
+      --observation @<file>... --json`, once. If it reports an error, fix the
+      one thing it names and run again; do not freeze a second definition.
+
+   Attributed evidence is the person's word, not yours. Record their answer
+   verbatim as `statement` and their chosen outcome as `outcome`; if they only
+   picked an option, the statement is that option's label. Never write
+   your own findings into an attributed observation and never decide an attributed
+   outcome yourself. What you noticed while reading the code goes into your
+   report as context, labelled as your review; it is not evidence and does
+   not change the verdict.
 
 4. Report the verdict, each requirement's status, the submission grade in the
    record's limitations, the `eval_id`, and the record path

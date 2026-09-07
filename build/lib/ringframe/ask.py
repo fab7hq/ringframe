@@ -370,6 +370,11 @@ def resolve(ws, session=None, kind="ask", reference=None) -> dict:
     return {"candidates": summaries, "rule_applied": "unique_in_workspace" if len(summaries) == 1 else "chooser"}
 
 
+def list_asks(ws) -> list[dict]:
+    """Every compiled Ask in this workspace, oldest first: what Eval and a person choose from."""
+    return [_summary(ws, ask_id, rec) for ask_id, rec in _by_id(ws).items() if rec["compiled"]]
+
+
 def show(ws, ask_id=None, session=None) -> dict:
     res = resolve(ws, session=session, reference=ask_id)
     if len(res["candidates"]) != 1:

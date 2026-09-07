@@ -107,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--handoff", action="store_true")
     d.add_argument("--state", choices=["delivery_failed", "unavailable"])
     d.add_argument("--reason", default="")
+    a.add_parser("list")
     s = a.add_parser("show")
     s.add_argument("--ask")
     s.add_argument("--session")
@@ -203,6 +204,8 @@ def _dispatch(ns, ws) -> tuple[int, object]:
             if not ns.state:
                 build_parser().error("--handoff or --state is required")
             return 0, ask.delivery_state(ws, ns.ask, ns.state, ns.reason)
+        if ns.sub == "list":
+            return 0, {"asks": ask.list_asks(ws)}
         if ns.sub == "show":
             return 0, ask.show(ws, ask_id=ns.ask, session=ns.session)
         return 0, ask.resolve(ws, session=ns.session, kind=ns.kind)
