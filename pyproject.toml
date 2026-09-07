@@ -9,7 +9,9 @@ description = "Explicit intent, evaluation, and decision layer inside native AI 
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pyyaml>=6.0",
+]
 
 [project.scripts]
 ringframe = "ringframe.cli:main"
@@ -28,7 +30,7 @@ where = ["core"]
 include = ["ringframe*"]
 
 [tool.setuptools.package-data]
-ringframe = ["profiles/*.json"]
+ringframe = ["profiles/*.yaml", "deltas/*.yaml", "deltas/practice/*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["core"]

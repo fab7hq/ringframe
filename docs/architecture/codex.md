@@ -46,7 +46,7 @@ Observed Codex behaviours the adapter accounts for (TUI run card
   unknown profile, and hands off without the `/plan ` prefix. Use one
   invocation per intent, or vary the text.
 
-Profile `codex@0.153` (`core/ringframe/profiles/codex.json`) records the
+Profile `codex@0.153` (`core/ringframe/profiles/codex.yaml`) records the
 feature prerequisite, the prompt prefixes, the goal length limit, and that
 `native_direct` with write, execute, or external effects needs an explicit
 request in the route.

@@ -6,7 +6,7 @@
 uv sync
 ~~~
 
-Python ≥ 3.11, standard library only at runtime. `pytest` is the only dev
+Python ≥ 3.11, standard library plus PyYAML (authored configuration is YAML) at runtime. `pytest` is the only dev
 dependency.
 
 ## Commands

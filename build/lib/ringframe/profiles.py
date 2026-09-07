@@ -1,28 +1,23 @@
 """Host capability profiles shipped with the core."""
 
-import json
 import re
 from importlib import resources
 
-from ringframe import digest
+from ringframe import config
 
 _DIR = resources.files("ringframe") / "profiles"
 
 
-def _raw(name: str) -> bytes:
-    return (_DIR / f"{name}.json").read_bytes()
-
-
 def load(name: str) -> dict:
-    return json.loads(_raw(name))
+    return config.load_yaml_text((_DIR / f"{name}.yaml").read_text(encoding="utf-8"), f"profiles/{name}.yaml")
 
 
 def sha256(name: str) -> str:
-    return digest.sha256_bytes(_raw(name))
+    return config.sha256_of(load(name))
 
 
 def names() -> list[str]:
-    return sorted(p.name[:-5] for p in _DIR.iterdir() if p.name.endswith(".json"))
+    return sorted(p.name[:-5] for p in _DIR.iterdir() if p.name.endswith(".yaml"))
 
 
 def _version(v: str) -> tuple:
@@ -45,6 +40,15 @@ def for_host(host: dict) -> dict:
     for name in names():
         p = load(name)
         if p["host"] == host.get("name") and _in_range(str(host.get("version", "")), p["version_range"]):
+            return p
+    return load("unknown")
+
+
+def by_id(profile_id: str) -> dict:
+    """The profile whose profile_id matches, or the unknown profile."""
+    for name in names():
+        p = load(name)
+        if p.get("profile_id") == profile_id:
             return p
     return load("unknown")
 
