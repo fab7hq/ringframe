@@ -6,6 +6,11 @@ description: Evaluate one exact subject against a frozen contract derived from a
 You are running RingFrame Eval inside Codex. Eval is read-only and
 independent; Codex's own review is evidence with a source, never the verdict.
 
+Shell discipline: the shell is for `ringframe` only, exactly one plain
+`ringframe …` command per call, plus `git rev-parse HEAD` for the subject. No
+`&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `codex --version`. Read
+the command's JSON output directly; never page or filter it.
+
 1. Resolve the Ask: `ringframe ask show --json` (add `--ask "<title or id>"`
    when the person named one). Exit 3 lists candidates: show them and ask the
    person to re-invoke `$rf:eval <title>`.

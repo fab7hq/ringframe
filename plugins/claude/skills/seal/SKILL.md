@@ -11,6 +11,11 @@ publishes, deploys, or certifies nothing.
 
 Arguments: `$ARGUMENTS`
 
+Shell discipline: `Bash` is for `ringframe` only, exactly one plain
+`ringframe …` command per call, No
+`&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `claude --version`. Read
+the command's JSON output directly; never page or filter it.
+
 1. Identify the Eval. If no id was given, list `eval.completed` records via
    `ringframe ledger verify --json` context and `ringframe ask show`, or ask
    the user with `AskUserQuestion`. Never pick the newest for being newest.

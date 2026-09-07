@@ -12,6 +12,11 @@ Claude Code's own review is evidence with a source, never the verdict.
 
 Reference (optional): `$ARGUMENTS`
 
+Shell discipline: `Bash` is for `ringframe` only, exactly one plain
+`ringframe …` command per call, plus `git rev-parse HEAD` for the subject. No
+`&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `claude --version`. Read
+the command's JSON output directly; never page or filter it.
+
 ## 1. Resolve the Ask
 
 Run `ringframe ask show --json` with `--ask "<reference>"` when one was given.

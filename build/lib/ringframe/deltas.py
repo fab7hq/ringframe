@@ -98,9 +98,11 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
     validate_concerns(concerns, domain)
     merged = effective(ws, domain)
     cap_wants_subagents = bool(profile.get("subagents"))
+    # practice entries render when declared (attributed) or measured (qualified); candidates only in evaluation runs
+    practice_statuses = {"attributed", "qualified"} | ({"candidate"} if "candidate" in statuses else set())
     core, situational = [], []
     for order, (eid, e) in enumerate(merged.items()):
-        if e.get("enabled") is False or e.get("status", "attributed") not in ("attributed", "qualified") or not _matches(e, classification):
+        if e.get("enabled") is False or e.get("status", "attributed") not in practice_statuses or not _matches(e, classification):
             continue
         if e.get("requires", {}).get("host_capability") == "subagents" and not cap_wants_subagents:
             continue
@@ -112,7 +114,11 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
     core.sort(key=lambda t: t[:2])
     situational.sort(key=lambda t: t[:2])
     cap = int(shipped["render"]["core_cap"])
-    kept_core, dropped = core[:cap], [e["id"] for _, _, e in core[cap:]]
+    # the core cap governs the shipped default; candidates under evaluation are appended so that an evaluation
+    # arm equals the default arm plus the candidates (nothing displaced, nothing hidden)
+    stable = [t for t in core if t[2].get("status", "attributed") != "candidate"]
+    candidates = [t for t in core if t[2].get("status", "attributed") == "candidate"]
+    kept_core, dropped = stable[:cap] + candidates, [e["id"] for _, _, e in stable[cap:]]
     selected = [e for _, _, e in kept_core + situational]
     heading = str(shipped["render"].get("heading", "Rules:"))
     practice_text = (heading + "\n" + "\n".join(f"- {_label(e)}: {' '.join(e['text'].split())}" for e in selected)) if selected else ""

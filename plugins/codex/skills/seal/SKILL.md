@@ -6,6 +6,11 @@ description: Bind a fresh Eval and unchanged subject to one authorized dispositi
 You are running RingFrame Seal inside Codex. A Seal records a decision; it
 merges, publishes, deploys, or certifies nothing.
 
+Shell discipline: the shell is for `ringframe` only, exactly one plain
+`ringframe …` command per call, No
+`&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `codex --version`. Read
+the command's JSON output directly; never page or filter it.
+
 1. Identify the Eval (`ringframe ask show --json`, or ask through
    `request_user_input`). Never pick the newest for being newest.
 2. Confirm with `request_user_input`: Eval id, verdict, subject, disposition.

@@ -155,3 +155,10 @@ def test_codex_hook_observes_handoff_submission(repo, tmp_path):
     assert hook("/plan Add a health endpoint.").returncode == 0  # the person pasted prompt.txt into the composer
     shown = json.loads(subprocess.run(["ringframe", "ask", "show", "--json"], cwd=repo, capture_output=True, text=True, env=env, check=True).stdout)
     assert shown["ask_id"] == compiled["ask_id"] and shown["submission"] == "observed"
+
+
+def test_every_skill_carries_the_shell_discipline():
+    for host in ("claude", "codex"):
+        for name in ("ask", "eval", "seal"):
+            text = (ROOT / "plugins" / host / "skills" / name / "SKILL.md").read_text()
+            assert "one plain" in text and "pipes" in text, f"{host}/{name} lacks the one-plain-ringframe-command rule"
