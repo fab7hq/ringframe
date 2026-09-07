@@ -192,3 +192,8 @@ def test_deltas_render_json_exposes_each_directive_for_composition(repo, monkeyp
 def test_eval_list_cli(repo, monkeypatch):
     code, out, _ = run(repo, "eval", "list", "--json", monkeypatch=monkeypatch)
     assert code == 0 and out == {"evals": []}
+
+
+def test_ask_list_cli(repo, monkeypatch):
+    code, out, _ = run(repo, "ask", "list", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out == {"asks": []}

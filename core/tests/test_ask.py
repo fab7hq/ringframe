@@ -394,3 +394,14 @@ def test_composed_rules_are_audited_against_the_supplied_directives(repo, monkey
     (norules / "composed.txt").write_bytes(b"Add GET /health/details.\n")
     with pytest.raises(LedgerError, match="ask.composed_rules"):
         compile_(ws, staged=norules, title="Health", capability="native_plan", host=host, classification=cls)
+
+
+def test_ask_list_enumerates_every_compiled_ask_oldest_first(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    assert ask.list_asks(ws) == []
+    a = compile_(ws)
+    b = compile_(ws, staged=stage(ws, prompt=b"Other.\n"), title="Other")
+    ask.confirm(ws, b["ask_id"])
+    listed = ask.list_asks(ws)
+    assert [x["ask_id"] for x in listed] == [a["ask_id"], b["ask_id"]]
+    assert listed[0]["outcome"] == "compiled" and listed[1]["outcome"] == "confirmed" and listed[1]["title"] == "Other"

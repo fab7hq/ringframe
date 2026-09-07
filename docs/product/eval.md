@@ -95,3 +95,10 @@ the Ask treatment beats the untreated prompt on the same task and stratum.
 `ringframe eval list --json` enumerates every Eval in the workspace (frozen or
 completed) with id, state, verdict, basis Ask, subject, and record path. Seal
 chooses from this list; nothing else enumerates Evals.
+
+
+## Attributed evidence is the person's word
+
+An `attributed` observation carries the person's statement verbatim and the
+outcome they chose. The skill never authors an attributed observation from its
+own review; its review is context in the report, not evidence.

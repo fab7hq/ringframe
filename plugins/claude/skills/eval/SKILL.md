@@ -19,7 +19,8 @@ the command's JSON output directly; never page or filter it.
 
 ## 1. Resolve the Ask
 
-Run `ringframe ask show --json` with `--ask "<reference>"` when one was given.
+Run `ringframe ask list --json` to see every Ask (id, title, outcome), then
+`ringframe ask show --json --ask "<id or title>"` for the one the person means.
 Exit 3 means several candidates: present them with `AskUserQuestion` and ask
 the user to choose, or to supply an explicit contract file instead. Never pick
 the newest because it is newest.
@@ -58,6 +59,16 @@ Subject: default to the current commit (`git rev-parse HEAD`, kind
    "limitations":[]}` to `.fab7/rf/tmp/obs-<nonce>-<id>.json`.
 4. `ringframe eval run --eval <eval_id> --definition-sha256 <sha> --observation
    @<file>... --json`.
+
+Attributed evidence is the person's word, not yours. When a requirement's
+evidence is `attributed`, ask the person with `AskUserQuestion` (options
+`Pass`, `Fail`, `Indeterminate`, free text allowed) and record their answer
+**verbatim** as the observation's `statement` and their chosen outcome as
+`outcome`; if they only picked an option, the statement is that option's
+label. Never write your own findings into an attributed observation and
+never decide an attributed outcome yourself. What you noticed while reading
+the code goes into your report as context, labelled as your review; it is
+not evidence and it does not change the verdict.
 
 ## 4. Report
 

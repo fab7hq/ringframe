@@ -162,3 +162,9 @@ def test_every_skill_carries_the_shell_discipline():
         for name in ("ask", "eval", "seal"):
             text = (ROOT / "plugins" / host / "skills" / name / "SKILL.md").read_text()
             assert "one plain" in text and "pipes" in text, f"{host}/{name} lacks the one-plain-ringframe-command rule"
+
+
+def test_eval_skills_never_author_attributed_evidence():
+    for host in ("claude", "codex"):
+        text = (ROOT / "plugins" / host / "skills" / "eval" / "SKILL.md").read_text()
+        assert "verbatim" in text and "never" in text and "your own" in text.lower(), f"{host}/eval lacks the attributed-evidence rule"
