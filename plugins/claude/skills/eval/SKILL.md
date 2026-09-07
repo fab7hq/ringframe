@@ -62,7 +62,9 @@ Subject: default to the current commit (`git rev-parse HEAD`, kind
 ## 4. Report
 
 State the verdict (`aligned`, `drifted`, `incomplete`), each requirement's
-status, forbidden effects observed, and the record path. Do not soften an
+status, forbidden effects observed, and the record path
+`.fab7/rf/evals/<eval_id>.json` (the CLI wrote it; `ringframe eval list
+--json` shows it). Give the `eval_id` explicitly so the person can seal it. Do not soften an
 `incomplete` or `drifted` verdict. If the user wants to fix drift, that is
 native work followed by a new Eval, optionally after a new `/rf:ask` linked
 with `remediates`.

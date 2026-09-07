@@ -16,9 +16,11 @@ Shell discipline: `Bash` is for `ringframe` only, exactly one plain
 `&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `claude --version`. Read
 the command's JSON output directly; never page or filter it.
 
-1. Identify the Eval. If no id was given, list `eval.completed` records via
-   `ringframe ledger verify --json` context and `ringframe ask show`, or ask
-   the user with `AskUserQuestion`. Never pick the newest for being newest.
+1. Identify the Eval. Run `ringframe eval list --json`: it lists every Eval
+   in this workspace with its id, state, verdict, basis Ask, and subject. If
+   an id or title was given, match it there. Otherwise show the completed
+   Evals in an `AskUserQuestion` and let the user choose. Never pick the
+   newest for being newest, and never guess an id.
 2. Confirm with `AskUserQuestion`: the Eval id, its verdict, the subject, and
    the disposition. If the disposition is `accepted` and the verdict is not
    `aligned`, ask the user to state the acknowledged risk in their own words;

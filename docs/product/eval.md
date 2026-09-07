@@ -88,3 +88,10 @@ ringframe eval run --eval <eval_id> [--definition-sha256 <hex>] [--observation @
 Model graders, calibration and disagreement handling, and comparison against
 an untreated native baseline inside Eval wait until a frozen comparison shows
 the Ask treatment beats the untreated prompt on the same task and stratum.
+
+
+## Listing
+
+`ringframe eval list --json` enumerates every Eval in the workspace (frozen or
+completed) with id, state, verdict, basis Ask, subject, and record path. Seal
+chooses from this list; nothing else enumerates Evals.

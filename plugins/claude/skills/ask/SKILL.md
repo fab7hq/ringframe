@@ -74,8 +74,9 @@ offer one.
 Before showing the chooser, persist the candidate so the record exists even if
 the turn ends early:
 
-1. Pick a nonce and, with the `Write` tool, create
-   `.fab7/rf/tmp/stage-<nonce>/source.txt` containing exactly the source
+1. Pick a nonce and, with the `Write` tool, create, **under the project
+   workspace root (the current working directory), never under this skill's
+   directory**, `.fab7/rf/tmp/stage-<nonce>/source.txt` containing exactly the source
    intent above, and `.fab7/rf/tmp/stage-<nonce>/composed.txt` containing
    only the composed prompt from section 2 (no frontmatter, explanation, or
    copy instructions). The CLI adds the prefix, records which directives it

@@ -26,5 +26,6 @@ the command's JSON output directly; never page or filter it.
    eval run --eval <eval_id> --definition-sha256 <sha> --observation
    @<file>... --json`.
 4. Report the verdict, each requirement's status, the submission grade in the
-   record's limitations, and the record path. Never soften `drifted` or
+   record's limitations, the `eval_id`, and the record path
+   `.fab7/rf/evals/<eval_id>.json` (the CLI wrote it). Never soften `drifted` or
    `incomplete`.

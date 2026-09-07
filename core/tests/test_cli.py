@@ -187,3 +187,8 @@ def test_deltas_render_json_exposes_each_directive_for_composition(repo, monkeyp
     ids = [e["id"] for e in out["practice"]["entries"]]
     assert ids == out["practice"]["selected"] and all(e["text"] for e in out["practice"]["entries"])
     assert out["host"]["entries"] == []  # nothing qualified yet
+
+
+def test_eval_list_cli(repo, monkeypatch):
+    code, out, _ = run(repo, "eval", "list", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out == {"evals": []}

@@ -188,3 +188,18 @@ def run(ws: Workspace, eval_id: str, observations: list[dict] | None = None, def
 def load_record(ws: Workspace, eval_id: str) -> dict | None:
     p = ws.rf_dir / f"evals/{eval_id}.json"
     return json.loads(p.read_bytes()) if p.exists() else None
+
+
+def list_records(ws: Workspace) -> list[dict]:
+    """Every Eval in this workspace, frozen or completed, oldest first: what Seal chooses from."""
+    out = []
+    d = ws.rf_dir / "evals"
+    for defn in sorted(d.glob("*.definition.json")) if d.exists() else []:
+        eval_id = defn.name[: -len(".definition.json")]
+        frozen = json.loads(defn.read_bytes())
+        rec = load_record(ws, eval_id)
+        out.append({"eval_id": eval_id, "state": "completed" if rec else "frozen", "frozen_at": frozen.get("frozen_at"),
+                    "basis": frozen.get("basis"), "subject": frozen.get("subject"),
+                    "verdict": rec.get("verdict") if rec else None, "completed_at": rec.get("time") if rec else None,
+                    "path": f"evals/{eval_id}.json" if rec else f"evals/{eval_id}.definition.json"})
+    return out

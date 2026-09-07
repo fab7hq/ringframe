@@ -11,8 +11,11 @@ Shell discipline: the shell is for `ringframe` only, exactly one plain
 `&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `codex --version`. Read
 the command's JSON output directly; never page or filter it.
 
-1. Identify the Eval (`ringframe ask show --json`, or ask through
-   `request_user_input`). Never pick the newest for being newest.
+1. Identify the Eval. Run `ringframe eval list --json`: it lists every Eval
+   in this workspace with its id, state, verdict, basis Ask, and subject. If
+   an id or title was given, match it there; otherwise show the completed
+   Evals through `request_user_input` and let the person choose. Never pick
+   the newest for being newest, and never guess an id.
 2. Confirm with `request_user_input`: Eval id, verdict, subject, disposition.
    If the disposition is `accepted` and the verdict is not `aligned`, ask the
    person to state the acknowledged risk and pass it as `--acknowledge`.

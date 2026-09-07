@@ -121,6 +121,7 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--subject-kind", required=True, choices=evaluate.KINDS)
     f.add_argument("--subject-ref", required=True)
     f.add_argument("--definition", required=True, help="inline JSON or @file")
+    e.add_parser("list")
     rn = e.add_parser("run")
     rn.add_argument("--eval", required=True)
     rn.add_argument("--definition-sha256")
@@ -216,6 +217,8 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         rendered = deltas.render(ws, prof, ns.capability, _json_arg(ns.classification), statuses=tuple(ns.statuses.split(",")))
         return 0, rendered if ns.json else rendered["text"]
     if ns.cmd == "eval":
+        if ns.sub == "list":
+            return 0, {"evals": evaluate.list_records(ws)}
         if ns.sub == "freeze":
             contract = _json_arg(ns.contract) if ns.contract else None
             return 0, evaluate.freeze(ws, subject_kind=ns.subject_kind, subject_ref=ns.subject_ref, definition=_json_arg(ns.definition), ask_id=ns.ask, contract=contract)

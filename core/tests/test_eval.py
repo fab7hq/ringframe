@@ -124,3 +124,15 @@ def test_definition_validation_and_duration():
         evaluate.validate_definition({"schema": "ringframe.eval-definition/1", "requirements": [{"id": "R1"}]})
     assert evaluate.parse_iso_duration("PT24H") == 86400 and evaluate.parse_iso_duration("P7D") == 7 * 86400
     assert evaluate.parse_iso_duration("P1DT2H30M") == 86400 + 9000
+
+
+def test_eval_list_enumerates_records_newest_last(repo):
+    ws = ws_for(repo)
+    assert evaluate.list_records(ws) == []
+    a = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=head(repo), definition=definition())
+    evaluate.run(ws, a["eval_id"], observations=[{"requirement": "R2", "source": "human:local-user", "scope": "s", "time": "2026-01-01T00:00:00Z", "statement": "ok", "outcome": "pass", "limitations": []}])
+    b = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=head(repo), definition=definition())
+    listed = evaluate.list_records(ws)
+    assert [r["eval_id"] for r in listed] == [a["eval_id"], b["eval_id"]]
+    assert listed[0]["verdict"] == "aligned" and listed[0]["subject"]["ref"] == head(repo) and listed[0]["state"] == "completed"
+    assert listed[1]["verdict"] is None and listed[1]["state"] == "frozen"  # frozen, not yet run

@@ -48,7 +48,8 @@ effects). Codex capabilities in this profile:
    --classification '<json>' --json` with the classification below. The CLI
    selects the directives that apply to this Ask (`host.entries`,
    `practice.entries`); you never choose, drop, or add rules.
-2. Write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
+2. Under the project workspace root (the current working directory), never
+   under this skill's directory, write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
    `.fab7/rf/tmp/stage-<nonce>/composed.txt` in two parts. First, one brief
    for this task, the way a senior engineer briefs a peer: start from the
    exact intent and name the artifacts, paths, and constraints it names; add
