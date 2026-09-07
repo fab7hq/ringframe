@@ -34,6 +34,17 @@ The plugin's skills and hooks call `ringframe`; without it they do nothing.
 On Codex, RingFrame compiles and confirms; you paste the prompt (see
 `docs/architecture/codex.md` for the qualified tuple and its limits).
 
+## Status
+
+Qualified end to end on Claude Code 2.1.263 (Sonnet 5, low effort) at commit
+`007ac50` (`ringframe-loop-q05`, 3 of 3): Ask compiles and confirms a
+composed prompt, the model plans and implements, Eval freezes a definition
+from the Ask and records a verdict on the committed work, a follow-up Ask runs
+the same way, Eval records a second verdict, and Seal binds it with a receipt
+that `ringframe seal check` verifies, ledger clean throughout. Ask alone is
+also qualified on Codex 0.153.4 (`ringframe-ask-codex-q07`); the Codex loop
+qualification is pending. Not released to PyPI yet.
+
 ## Use
 
 ~~~text
