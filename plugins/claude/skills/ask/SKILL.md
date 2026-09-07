@@ -86,7 +86,9 @@ with one single-select question:
   proceed, type a revision, choose the other route, or cancel.
 - option `Proceed with Plan (Recommended)` (or `Proceed directly
   (Recommended)` when `native_direct` was selected): one sentence on what
-  Claude Code will do next; put the complete compiled prompt in `preview`.
+  Claude Code will do next; put the complete rendered prompt in `preview`,
+  obtained verbatim from `ringframe ask copy --ask <ask_id>` (the CLI rendered
+  it from your body plus its catalogs; never retype or summarise it).
 - option `Use direct execution` (or `Plan first`): the other route.
 - option `Cancel`: nothing is activated or inspected.
 - metadata source: `ringframe.ask`

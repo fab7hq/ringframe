@@ -85,9 +85,12 @@ Then:
 
 ## 3. Confirm with the native tool
 
-Call `request_user_input` with one question, `id: "route"`, whose text names
-the selected capability, why it fits, why the alternatives do not, what will
-happen next, and includes the complete compiled prompt. Options: `Proceed
+First run `ringframe ask copy --ask <ask_id>` to obtain the rendered prompt
+verbatim (the CLI rendered it from your body plus its catalogs; never retype
+or summarise it). Then call `request_user_input` with one question, `id:
+"route"`, whose text names the selected capability, why it fits, why the
+alternatives do not, what will happen next, and includes that complete
+rendered prompt. Options: `Proceed
 (Recommended)`, `Use direct execution` (or `Plan first`), `Cancel`. Free text
 is a revision: compile again with `--link revises:<ask_id>` and ask again.
 
