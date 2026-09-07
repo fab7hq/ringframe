@@ -1,17 +1,19 @@
 # Compiler: delta catalogs
 
-`ringframe ask compile` renders the prompt it hands to a native capability:
+The CLI selects; the model composes (default); the CLI can also render
+(baseline). Three staged forms, always `source.txt` plus one of:
 
-~~~text
-prompt.txt = <capability prompt_prefix> + body.txt + host deltas (host, capability) + practice deltas (classification)
-~~~
+| Staged file | Who phrases the directives | `compiler.source` |
+| --- | --- | --- |
+| `composed.txt` (default) | the skill, after `ringframe deltas render --json` returned the selected directives, writes one task-specific brief that applies them; the CLI adds the prefix only | `composed` |
+| `body.txt` (baseline) | the CLI appends the directives verbatim after the body | `body` |
+| `prompt.txt` (legacy) | the model wrote everything | `prompt` |
 
-The skill writes `source.txt` (the exact intent) and `body.txt` (the smallest
-task-specific prompt derived from it). The CLI adds the rest deterministically
-and records what it added in `ask.compiled.data.compiler`: the catalog digests,
-the selected entry ids, the matched concerns, and anything dropped by the
-budget. Staging `prompt.txt` directly is still accepted for hosts without a
-catalog; then `compiler.source` is `prompt`.
+In every form the CLI adds the capability prefix, enforces the length limit,
+validates `concerns` before any write, and records in
+`ask.compiled.data.compiler` the catalog digests, the selected entry ids
+(recomputed from the classification, never taken from the model), the matched
+concerns, and anything dropped by the budget.
 
 Two catalogs, all YAML:
 

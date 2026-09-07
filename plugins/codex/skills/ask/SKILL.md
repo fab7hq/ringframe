@@ -44,16 +44,19 @@ effects). Codex capabilities in this profile:
 
 ## 2. Compile and persist before asking
 
-Then:
-
-1. Write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
-   `.fab7/rf/tmp/stage-<nonce>/body.txt`: the smallest task-specific prompt
-   derived from the exact intent, naming the artifacts, paths, and constraints
-   the intent names and nothing else. Do not add the `/plan ` or `/goal `
-   prefix and do not add standing rules (assumptions, scope, verification,
-   style): the CLI renders `prompt.txt` as prefix + body + its delta catalogs
-   and records which rules it added.
-2. Only after both files exist, run one command:
+1. Run `ringframe deltas render --host codex --capability <id>
+   --classification '<json>' --json` with the classification below. The CLI
+   selects the directives that apply to this Ask (`host.entries`,
+   `practice.entries`); you never choose, drop, or add rules.
+2. Write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
+   `.fab7/rf/tmp/stage-<nonce>/composed.txt`: one brief for this task, the
+   way a senior engineer briefs a peer: start from the exact intent, name the
+   artifacts, paths, and constraints it names, and apply each supplied
+   directive to this task's specifics. Do not list the directives, restate
+   them generically, or name principles; add nothing beyond the intent and
+   the supplied directives. Do not add the `/plan ` or `/goal ` prefix: the
+   CLI adds it and records which directives it supplied.
+3. Only after both files exist, run one command:
    `ringframe ask compile --staged <dir> --title "<short title>"
    --capability <id> --classification '<json>' --route '<json>' --host
    '{"name":"codex","surface":"native-tui"}' --json`. Keep the returned

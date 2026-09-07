@@ -86,11 +86,12 @@ def validate_concerns(concerns, domain: str = DEFAULT_DOMAIN) -> None:
 def render(ws, profile: dict, capability: str, classification: dict, *, statuses=("qualified",), domain: str = DEFAULT_DOMAIN) -> dict:
     """Deterministic delta block for one Ask: host lines for (profile.host, capability), then one practice paragraph."""
     # ---- host layer
-    host_block = {"catalog_sha256": None, "deltas": [], "status_filter": list(statuses), "text": ""}
+    host_block = {"catalog_sha256": None, "deltas": [], "status_filter": list(statuses), "text": "", "entries": []}
     if profile.get("host") in host_catalog_names():
         cat = load_host_catalog(profile["host"])
         chosen = [e for e in cat["entries"] if e["capability"] == capability and e["status"] in statuses]
-        host_block.update(catalog_sha256=config.sha256_of(cat), deltas=[e["id"] for e in chosen], text="\n".join(e["text"].strip() for e in chosen))
+        host_block.update(catalog_sha256=config.sha256_of(cat), deltas=[e["id"] for e in chosen], text="\n".join(e["text"].strip() for e in chosen),
+                          entries=[{"id": e["id"], "text": e["text"].strip()} for e in chosen])
     # ---- practice layer
     shipped = load_practice_catalog(domain)
     concerns = list(classification.get("concerns", []))
@@ -117,7 +118,8 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
     layers = _layers(ws)
     practice_block = {"domain": domain, "shipped_sha256": config.sha256_of(shipped), "layers": [{k: v for k, v in l.items() if k != "entries"} for l in layers],
                       "selected": [e["id"] for e in selected], "matched_concerns": [c for c in concerns if any(c in e.get("concerns", []) for e in selected)],
-                      "dropped_by_budget": dropped, "text": practice_text}
+                      "dropped_by_budget": dropped, "text": practice_text,
+                      "entries": [{"id": e["id"], "text": " ".join(e["text"].split())} for e in selected]}
     text = "\n".join(part for part in (host_block["text"], practice_text) if part)
     return {"text": text, "host": host_block, "practice": practice_block}
 

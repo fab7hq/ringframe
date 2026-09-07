@@ -51,14 +51,19 @@ execute, or external effects. Then select one capability from this profile:
 Claude Code exposes no persistent goal capability on this surface; do not
 offer one.
 
-## 2. Write the task body
+## 2. Compose the prompt from the selected directives
 
-Write `body.txt`: the smallest task-specific prompt for the selected
-capability, derived from the exact source intent. Name the artifacts, paths,
-and constraints the intent names; add nothing the intent does not ask for.
-Do not add standing rules (assumptions, scope, verification, style): the CLI
-renders those from its delta catalogs and records which ones it added. Do not
-add the `/goal ` or other command prefix: the CLI adds the capability prefix.
+1. Run, via `Bash`, `ringframe deltas render --host claude-code --capability
+   native_plan|native_direct --classification '<json>' --json` with the
+   classification from section 4. The CLI selects the directives that apply
+   to this Ask (`host.entries`, `practice.entries`); you never choose, drop,
+   or add rules.
+2. Write the prompt as one brief for this task, the way a senior engineer
+   briefs a peer: start from the exact source intent, name the artifacts,
+   paths, and constraints it names, and apply each supplied directive to this
+   task's specifics. Do not list the directives, restate them generically, or
+   name principles; add nothing beyond the intent and the supplied directives.
+   Do not add a command prefix: the CLI adds it.
 
 ## 3. Persist the candidate, then confirm natively
 
@@ -67,9 +72,10 @@ the turn ends early:
 
 1. Pick a nonce and, with the `Write` tool, create
    `.fab7/rf/tmp/stage-<nonce>/source.txt` containing exactly the source
-   intent above, and `.fab7/rf/tmp/stage-<nonce>/body.txt` containing only
-   the task body from section 2 (no frontmatter, explanation, or copy
-   instructions). The CLI renders `prompt.txt` from it.
+   intent above, and `.fab7/rf/tmp/stage-<nonce>/composed.txt` containing
+   only the composed prompt from section 2 (no frontmatter, explanation, or
+   copy instructions). The CLI adds the prefix, records which directives it
+   supplied, and publishes `prompt.txt`.
 2. Run, via `Bash`, `ringframe ask compile --staged <that directory> --title
    "<short human title>" --capability native_plan|native_direct
    --classification '<json>' --route '<json>' --host

@@ -177,3 +177,13 @@ def test_deltas_commands(repo, monkeypatch, tmp_path):
     assert code == 0 and "practice.hyrum" in out["practice"]["selected"] and out["text"]
     code, text, _ = run(repo, "deltas", "render", "--host", "codex", "--host-version", "codex-cli 0.153.4", "--capability", "native_plan", "--classification", cls, monkeypatch=monkeypatch)
     assert code == 0 and "observable behaviour" in text
+
+
+def test_deltas_render_json_exposes_each_directive_for_composition(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]})
+    code, out, _ = run(repo, "deltas", "render", "--host", "codex", "--host-version", "codex-cli 0.153.4", "--capability", "native_plan", "--classification", cls, "--json", monkeypatch=monkeypatch)
+    assert code == 0
+    ids = [e["id"] for e in out["practice"]["entries"]]
+    assert ids == out["practice"]["selected"] and all(e["text"] for e in out["practice"]["entries"])
+    assert out["host"]["entries"] == []  # nothing qualified yet

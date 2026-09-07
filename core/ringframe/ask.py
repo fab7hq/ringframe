@@ -61,11 +61,15 @@ def _normalize_classification(c) -> dict:
     return {k: [fix(x) for x in v] if isinstance(v, list) else fix(v) for k, v in c.items()}
 
 
-def _staged(staged: Path) -> tuple[bytes, bytes | None, bytes | None]:
-    """source.txt plus exactly one of prompt.txt (model-written prompt) or body.txt (task body; the CLI renders the prompt)."""
-    names = sorted(p.name for p in Path(staged).iterdir()) if Path(staged).is_dir() else None
-    if names not in (["prompt.txt", "source.txt"], ["body.txt", "source.txt"]):
-        raise LedgerError("ask.staged_dir", "must contain exactly source.txt and one of prompt.txt or body.txt")
+STAGED_FORMS = {("prompt.txt", "source.txt"): "prompt", ("body.txt", "source.txt"): "body", ("composed.txt", "source.txt"): "composed"}
+
+
+def _staged(staged: Path) -> tuple[bytes, str, bytes]:
+    """source.txt plus exactly one of prompt.txt (legacy: model wrote everything), body.txt (CLI renders the
+    directives after it) or composed.txt (model applied the CLI-selected directives; CLI adds the prefix only)."""
+    names = tuple(sorted(p.name for p in Path(staged).iterdir())) if Path(staged).is_dir() else ()
+    if names not in STAGED_FORMS:
+        raise LedgerError("ask.staged_dir", "must contain exactly source.txt and one of composed.txt, body.txt or prompt.txt")
     out = {}
     for name in names:
         data = (Path(staged) / name).read_bytes()
@@ -73,26 +77,28 @@ def _staged(staged: Path) -> tuple[bytes, bytes | None, bytes | None]:
             raise LedgerError("ask.staged_file", f"{name} must be non-empty UTF-8 without BOM")
         data.decode("utf-8")
         out[name] = data
-    return out["source.txt"], out.get("prompt.txt"), out.get("body.txt")
+    form = STAGED_FORMS[names]
+    return out["source.txt"], form, out[names[0]]
 
 
-def _render_prompt(ws, profile, cap, capability, classification, body: bytes) -> tuple[bytes, dict]:
-    """prompt = capability prefix + body + rendered deltas (ADR-0008). Deterministic; provenance recorded on the event."""
+def _render_prompt(ws, profile, cap, capability, classification, text_in: bytes, form: str) -> tuple[bytes, dict]:
+    """prompt = capability prefix + text (+ rendered directives when form is body). The selection is always the CLI's
+    (ADR-0008 decision 10): a composed prompt records what was supplied, recomputed from the classification."""
     try:
         rendered = deltas.render(ws, profile, capability, classification)
     except config.ConfigError as e:
         raise LedgerError("ask.classification", str(e)) from None
-    text = (cap.get("prompt_prefix") or "") + body.decode("utf-8").rstrip("\n") + "\n"
-    if rendered["text"]:
+    text = (cap.get("prompt_prefix") or "") + text_in.decode("utf-8").rstrip("\n") + "\n"
+    if form == "body" and rendered["text"]:
         text += rendered["text"].rstrip("\n") + "\n"
-    provenance = {"source": "body", "host": {k: v for k, v in rendered["host"].items() if k != "text"},
-                  "practice": {k: v for k, v in rendered["practice"].items() if k != "text"}}
+    provenance = {"source": form, "host": {k: v for k, v in rendered["host"].items() if k not in ("text", "entries")},
+                  "practice": {k: v for k, v in rendered["practice"].items() if k not in ("text", "entries")}}
     return text.encode("utf-8"), provenance
 
 
 def compile(ws, *, staged, title, capability, classification, route, host, links=(), limitations=(), actor=None):
     """The only Ask operation that writes artifacts. Appends `ask.compiled`."""
-    source, prompt, body = _staged(staged)
+    source, form, prompt = _staged(staged)
     classification = _normalize_classification(classification)
     host = dict(host)
     provenance = {}
@@ -117,8 +123,8 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
     except config.ConfigError as e:
         raise LedgerError("ask.classification", str(e)) from None
     compiler = {"source": "prompt"}
-    if body is not None:
-        prompt, compiler = _render_prompt(ws, profile, cap, capability, classification, body)
+    if form != "prompt":
+        prompt, compiler = _render_prompt(ws, profile, cap, capability, classification, prompt, form)
     text = prompt.decode("utf-8")
     prefix = cap.get("prompt_prefix")
     if prefix and not text.startswith(prefix):

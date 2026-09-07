@@ -346,3 +346,20 @@ def test_compile_rejects_unknown_concern_before_writing(repo, monkeypatch, tmp_p
     with pytest.raises(LedgerError, match="ask.classification"):
         compile_(ws, classification={**CLS, "concerns": ["telepathy"]})
     assert not (ws.rf_dir / "asks").exists() or not any((ws.rf_dir / "asks").iterdir())
+
+
+def test_compile_composed_prompt_records_the_cli_selection_not_the_models_claim(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    ws = workspace.resolve(cwd=repo).ensure()
+    sessions.capture(ws, "codex", {"session_id": "cc", "prompt": "$rf:ask add the health endpoint"}, host_version="codex-cli 0.153.4")
+    d = ws.rf_dir / "tmp" / "stage-composed"
+    d.mkdir(parents=True)
+    (d / "source.txt").write_bytes(b"add the health endpoint\n")
+    (d / "composed.txt").write_bytes(b"Add GET /health returning uptime. Reuse the existing bearer check; keep every current endpoint's behaviour unchanged.\n")
+    cls = {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]}
+    out = compile_(ws, staged=d, title="Health", capability="native_plan", host={"name": "codex", "surface": "native-tui"}, classification=cls)
+    text = ask.prompt_text(ws, out["ask_id"])
+    assert text == "/plan Add GET /health returning uptime. Reuse the existing bearer check; keep every current endpoint's behaviour unchanged.\n"  # prefix added, nothing appended
+    comp = [e for e in store.events(ws) if e["type"] == "ask.compiled"][-1]["data"]["compiler"]
+    assert comp["source"] == "composed" and "practice.hyrum" in comp["practice"]["selected"] and "practice.kiss" in comp["practice"]["selected"]
+    assert comp["practice"]["matched_concerns"] == ["api_surface"] and comp["host"]["deltas"] == []
