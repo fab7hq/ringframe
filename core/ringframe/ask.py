@@ -144,7 +144,7 @@ def confirm(ws, ask_id: str, actor=None) -> dict:
         raise LedgerError("ask.already_confirmed", ask_id)
     d = rec["compiled"]["data"]
     actor = _authorized(ws, _actor(actor), d["selected_capability"], d["classification"].get("effects", []))
-    surface = profiles.for_host(d["host"]).get("confirmation", {}).get("tool", "AskUserQuestion")
+    surface = profiles.for_host(d["host"]).get("confirmation", {}).get("tool")  # None under the unknown profile: never invent a surface
     return _append(ws, "ask.confirmed", ask_id, {"confirmation": {"observed_by": "skill", "surface": surface}}, actor)
 
 

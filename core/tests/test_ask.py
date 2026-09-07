@@ -55,7 +55,7 @@ def test_confirm_and_cancel_are_appended_graded_events(repo):
     ws = workspace.resolve(cwd=repo).ensure()
     out = compile_(ws)
     rec = ask.confirm(ws, out["ask_id"])
-    assert rec["confirmation"] == {"observed_by": "skill", "surface": "AskUserQuestion"}
+    assert rec["confirmation"] == {"observed_by": "skill", "surface": None}  # no capture -> unknown profile -> no surface claimed
     with pytest.raises(LedgerError, match="ask.already_confirmed"):
         ask.confirm(ws, out["ask_id"])
     later = ask.cancel(ws, out["ask_id"], reason="changed my mind", attributed=True)
@@ -268,3 +268,15 @@ def test_non_human_actor_needs_authorization_to_compile_or_confirm(repo):
     assert store.events(ws)[0]["actor"] == {"kind": "agent", "id": "ci", "authority": "preauthorized:authorizations/ci.json"}
     with pytest.raises(NeedsInput):
         compile_(ws, staged=stage(ws), actor=agent, capability="native_direct", classification={**CLS, "task": ["question"], "result": "answer", "effects": ["read"]})
+
+
+def test_confirmation_surface_comes_from_the_profile_or_is_unknown(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    # unknown host profile: the CLI must not invent a Claude Code surface for a Codex session
+    out = compile_(ws, host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
+    rec = ask.confirm(ws, out["ask_id"])
+    assert rec["confirmation"]["surface"] is None
+    sessions.capture(ws, "codex", {"session_id": "cx", "prompt": "$rf:ask fix the login bug"}, host_version="codex-cli 0.153.4")
+    out2 = compile_(ws, staged=stage(ws, prompt=b"/plan Fix.\n"), title="second", host={"name": "codex", "surface": "native-tui"}, capability="native_plan",
+                    classification={**CLS, "task": ["implement"], "result": "workspace_change", "effects": ["write"]})
+    assert ask.confirm(ws, out2["ask_id"])["confirmation"]["surface"] == "request_user_input"
