@@ -81,3 +81,14 @@ def test_render_is_a_labelled_rules_list_and_entries_carry_labels(repo, monkeypa
     assert any(l.startswith("- KISS: ") for l in lines) and any(l.startswith("- Hyrum: ") for l in lines)
     for name in deltas.host_catalog_names():
         assert all(e.get("label") for e in deltas.load_host_catalog(name)["entries"])
+
+
+def test_candidate_practice_entries_render_only_when_candidates_are_requested(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    ws = workspace.resolve(cwd=repo).ensure()
+    prof = profiles.load("claude-code")
+    default = deltas.render(ws, prof, "native_plan", IMPL)
+    assert "practice.assumptions" not in default["practice"]["selected"]  # candidate: never in the default prompt
+    evaluation = deltas.render(ws, prof, "native_plan", IMPL, statuses=("qualified", "candidate"))
+    assert "practice.assumptions" in evaluation["practice"]["selected"]  # evaluation runs render candidates so they can be measured
+    assert set(evaluation["practice"]["selected"]) >= set(default["practice"]["selected"])

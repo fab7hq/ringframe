@@ -263,6 +263,7 @@ entries:
     principle: owner practice
     label: Assumptions
     applies_to: {task: [plan, implement, diagnose]}
+    tier: core
     text: >-
       Where the requirement is silent, write the assumption you are making in
       one line before acting on it.
