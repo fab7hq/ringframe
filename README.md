@@ -37,13 +37,14 @@ On Codex, RingFrame compiles and confirms; you paste the prompt (see
 ## Status
 
 Qualified end to end on Claude Code 2.1.263 (Sonnet 5, low effort) at commit
-`007ac50` (`ringframe-loop-q05`, 3 of 3): Ask compiles and confirms a
-composed prompt, the model plans and implements, Eval freezes a definition
-from the Ask and records a verdict on the committed work, a follow-up Ask runs
-the same way, Eval records a second verdict, and Seal binds it with a receipt
-that `ringframe seal check` verifies, ledger clean throughout. Ask alone is
-also qualified on Codex 0.153.4 (`ringframe-ask-codex-q07`); the Codex loop
-qualification is pending. Not released to PyPI yet.
+`007ac50` (`ringframe-loop-q05`, 3 of 3) and on Codex 0.153.4 at `5190802`
+(`ringframe-loop-codex-q07`, 3 of 3): Ask compiles and confirms a composed
+prompt, the model implements, Eval records a verdict on the work, a follow-up
+Ask runs the same way, Eval records a second verdict, and Seal writes a
+receipt that `ringframe seal check` verifies, ledger clean throughout. Eval
+has since been redesigned as a judged verdict with confidence over every open
+Ask (sub-agent judges, no project commands); that design is not yet
+qualified on a host. Not released to PyPI yet.
 
 ## Use
 
@@ -58,8 +59,8 @@ proceed it persists the intent and prompt, enters Plan mode, and Claude Code
 takes over.
 
 ~~~text
-/rf:eval            evaluate the current commit against the Ask's obligations
-/rf:seal accepted   record the decision once the Eval is fresh and the subject unchanged
+/rf:eval            judge the work so far against every open Ask; verdict with confidence, no questions asked
+/rf:seal accepted   close the open Asks with your decision; the latest Eval is recorded as a fact
 ~~~
 
 `ringframe ask show`, `ringframe ledger verify`, and `ringframe seal check`

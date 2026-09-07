@@ -405,3 +405,31 @@ def test_ask_list_enumerates_every_compiled_ask_oldest_first(repo):
     listed = ask.list_asks(ws)
     assert [x["ask_id"] for x in listed] == [a["ask_id"], b["ask_id"]]
     assert listed[0]["outcome"] == "compiled" and listed[1]["outcome"] == "confirmed" and listed[1]["title"] == "Other"
+
+
+def test_compile_records_base_commit_and_asks_are_open_until_sealed_or_cancelled(repo):
+    import subprocess
+    ws = workspace.resolve(cwd=repo).ensure()
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    a = compile_(ws)
+    b = compile_(ws, title="Second")
+    ev = store.events(ws)[0]
+    assert ev["data"]["base_commit"] == head
+    assert [x["state"] for x in ask.list_asks(ws)] == ["open", "open"]
+    assert [x["ask_id"] for x in ask.open_asks(ws)] == [a["ask_id"], b["ask_id"]]
+    ask.cancel(ws, b["ask_id"])
+    assert [x["state"] for x in ask.list_asks(ws)] == ["open", "cancelled"]
+    assert [x["ask_id"] for x in ask.open_asks(ws)] == [a["ask_id"]]
+    # a seal event naming the Ask in its basis closes it
+    store.append(ws, {"schema": store.SCHEMA, "event_id": ids.new_id("evt"), "type": "seal.created", "time": sessions.now(), "id": "sel_x",
+                      "actor": {"kind": "human", "id": "local-user"}, "links": [], "data": {
+                          "basis": {"asks": [a["ask_id"]]}, "eval": None, "subject": {"kind": "git_commit", "ref": head}, "disposition": "accepted",
+                          "authority": {"kind": "human", "id": "local-user", "authority": "interactive"},
+                          "artifact": {"role": "seal_receipt", "path": "seals/sel_x.json", "bytes": 0, "sha256": "0" * 64}}})
+    assert [x["state"] for x in ask.list_asks(ws)] == ["sealed", "cancelled"] and ask.open_asks(ws) == []
+
+
+def test_compile_outside_git_records_no_base_commit(tmp_path):
+    ws = workspace.resolve(explicit=tmp_path).ensure()
+    compile_(ws)
+    assert store.events(ws)[0]["data"]["base_commit"] is None

@@ -53,7 +53,7 @@ def test_delivery_requires_mode_state_and_qualification():
 
 
 def test_every_event_type_has_a_required_key_list():
-    assert set(schema.REQUIRED) == {"ask.compiled", "ask.confirmed", "ask.cancelled", "ask.submission", "ask.delivery", "eval.completed", "seal.created", "seal.refused"}
+    assert set(schema.REQUIRED) == {"ask.compiled", "ask.confirmed", "ask.cancelled", "ask.submission", "ask.delivery", "eval.opened", "eval.completed", "seal.created", "seal.refused"}
 
 
 def test_confirmed_cancelled_and_submission_are_graded_observations():

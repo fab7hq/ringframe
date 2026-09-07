@@ -141,37 +141,38 @@ Detailed behavior is defined in [Ask](ask.md).
 
 # Eval
 
-Eval checks one immutable subject against one Ask or explicit external contract.
-A subject may be a commit, working-tree snapshot, file set, package, deployment,
-dataset, report, or another digestible artifact.
+Eval judges the work done so far against every open Ask. The subject is the
+current commit or the worktree; the anchor is the last Seal or the commit the
+earliest open Ask started from.
 
-Eval freezes its definition before collecting outcome-dependent evidence. Tests,
-linters, native reviews, model graders, external systems, and humans can provide
-evidence, but every observation retains its source, scope, time, and
-limitations.
+The CLI records facts exactly: the Asks, the anchor, the subject digest, the
+changed files, how many unrecorded prompts followed each Ask. Independent
+sub-agents of the eval skill judge: one reconstructs the effective intent
+from the Asks, three assess it from distinct angles (coverage, drift,
+adversary). The CLI aggregates their votes:
 
-Each requirement is `covered-pass`, `covered-fail`, `uncovered`, or
-`indeterminate`. The aggregate verdict is:
+- `aligned` when every active intent item has a `yes` majority and no changed
+  path is `unexplained` by a majority;
+- `drifted` when any item has a `no` majority or any path is `unexplained`; or
+- `incomplete` when the judges tie, cannot tell, or the subject moved.
 
-- `aligned` when all required evidence passes and forbidden effects are absent;
-- `drifted` when evidence proves a material mismatch; or
-- `incomplete` when identity, coverage, freshness, or reliability is
-  insufficient.
-
-Eval is read-only. Native self-review is evidence, not the RingFrame verdict.
+Every verdict carries a `confidence`: the lowest agreement among the deciding
+questions. Eval is read-only, runs none of the project's commands, knows
+nothing about its stack, asks the person nothing, and gates nothing.
 
 Detailed behavior is defined in [Eval](eval.md).
 
 # Seal
 
-Seal binds one fresh Eval and unchanged subject to an authorized disposition:
+Seal closes the open Asks with an authorized disposition:
 
 ~~~text
 accepted | rejected | deferred | abandoned
 ~~~
 
-The Eval verdict and disposition remain separate. Seal fails closed when the
-subject changed, evidence is stale, or authority is missing.
+It records the latest Eval over those Asks as a fact (verdict, confidence,
+whether the subject still matches) and never refuses because of a verdict.
+It refuses only when nothing is open or the actor lacks authority.
 
 Seal records a decision only. Merging, publishing, deployment, trading, and
 other consequential effects remain with authorized external systems.
@@ -189,7 +190,11 @@ Every RingFrame operation uses one local workspace directory:
 │   └── <ask_id>/
 │       ├── source.txt
 │       └── prompt.txt
-├── evals/<eval_id>.json
+├── evals/<eval_id>/
+│       ├── brief.json
+│       ├── intent.json
+│       ├── judgement-<n>.json
+│       └── record.json
 └── seals/<seal_id>.json
 ~~~
 
@@ -214,7 +219,7 @@ The required event types are:
 | Command | Events |
 | --- | --- |
 | Ask | `ask.compiled` when a candidate exists; then `ask.confirmed` or `ask.cancelled` as graded observations; `ask.delivery` when a delivery outcome is observed; `ask.submission` when a later submission is observed by a hook or attested by the person |
-| Eval | `eval.completed` |
+| Eval | `eval.opened`, then `eval.completed` |
 | Seal | `seal.created` or `seal.refused` |
 
 An Ask delivery records one of:
@@ -260,9 +265,10 @@ human invokes Ask
   -> confirms the generated prompt
   -> adapter dispatches or presents the prompt file
   -> human works and steers in the native harness
-  -> human invokes Eval on an exact subject
-       -> aligned: optionally Seal
-       -> drifted or incomplete: continue native work, then Eval again
+  -> human invokes Eval whenever they want a signal (no arguments, no questions)
+       -> reads the verdict and its confidence
+       -> continues native work or a further Ask, then Eval again
+  -> human invokes Seal whenever they decide the work is done
 ~~~
 
 ## Autonomous

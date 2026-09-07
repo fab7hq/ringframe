@@ -1,70 +1,37 @@
-"""Eval: freeze a definition, digest an exact subject, collect layered evidence, compute the verdict and the drift.
+"""Eval: a judged verdict with confidence over every open Ask (ADR-0009).
 
-Evidence classes, strongest first (ADR-0009): E1 command (with the test's origin), E2 artifact facts the CLI
-computes from the subject, E3 trajectory facts from hooks, E4 calibrated judges, E5 the person's verbatim word.
-The verdict is computed, never judged; an Eval whose required requirements rest on E5 alone is `attested`,
-never `aligned`. Drift is measured from the artifact: commission (changes bound to no requirement), omission
-(requirements not met), process (order facts from hooks)."""
+The CLI records facts exactly: the open Asks, the anchor, the subject digest, the changed files, how many
+unrecorded prompts followed each Ask, which judgements were submitted. Sub-agents of the eval skill judge:
+one reconstructs the effective intent from the Asks; at least three, from distinct angles, vote per item and
+classify each changed path. The CLI aggregates majorities and agreement into `verdict` and `confidence`.
+RingFrame runs none of the project's commands and knows nothing about its stack."""
 
 import json
 import re
 import subprocess
-import time
 from pathlib import Path
 
 from ringframe import digest, ids, schema, sessions, store
 from ringframe.store import LedgerError
 from ringframe.workspace import Workspace
 
-DEFINITION_SCHEMA = "ringframe.eval-definition/1"
-KINDS = ("git_commit", "worktree", "file_set", "artifact")
-EVIDENCE_KINDS = ("command", "artifact", "trajectory", "judge", "attributed")
-ORIGINS = ("preexisting", "person", "hidden", "agent")
-ARTIFACT_CHECKS = ("paths_present", "deps_unchanged", "scope_clean", "marker_present")
-CLASS = {"command": "E1", "artifact": "E2", "trajectory": "E3", "judge": "E4", "attributed": "E5"}
-COMMAND_TIMEOUT_S = 600
-STDOUT_HEAD = 4096
+BRIEF_SCHEMA = "ringframe.eval-brief/1"
+INTENT_SCHEMA = "ringframe.eval-intent/1"
+JUDGEMENT_SCHEMA = "ringframe.eval-judgement/1"
+RECORD_SCHEMA = "ringframe.eval/1"
+KINDS = ("git_commit", "worktree")
+ITEM_STATUS = ("active", "revised", "withdrawn")
+VOTES = ("yes", "no", "unknown")
+CLASSIFICATIONS = ("required", "consequence", "unexplained")
+INDEPENDENCE = ("sub_agent", "shared_context")
+MIN_JUDGES = 3
 
 
-def parse_iso_duration(text: str) -> int:
-    m = re.fullmatch(r"P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?", text)
-    if not m or not any(m.groups()):
-        raise LedgerError("eval.definition", f"freshness.max_age {text!r} is not an ISO 8601 duration like PT24H or P7D")
-    d, h, mi = (int(x or 0) for x in m.groups())
-    return d * 86400 + h * 3600 + mi * 60
-
-
-def validate_definition(d: dict) -> None:
-    if d.get("schema") != DEFINITION_SCHEMA:
-        raise LedgerError("eval.definition", f"schema must be {DEFINITION_SCHEMA}")
-    for group in ("requirements", "forbidden_effects", "process"):
-        for i, r in enumerate(d.get(group, [])):
-            for k in ("id", "text", "evidence"):
-                if k not in r:
-                    raise LedgerError("eval.definition", f"{group}[{i}].{k} missing")
-            for j, e in enumerate(r["evidence"]):
-                where = f"{group}[{i}].evidence[{j}]"
-                kind = e.get("kind")
-                if kind == "command":
-                    if not isinstance(e.get("run"), list) or not e["run"]:
-                        raise LedgerError("eval.definition", f"{where}.run must be a non-empty list")
-                    if e.get("origin", "preexisting") not in ORIGINS:
-                        raise LedgerError("eval.definition", f"{where}.origin must be one of {ORIGINS}")
-                elif kind == "artifact":
-                    if e.get("check") not in ARTIFACT_CHECKS:
-                        raise LedgerError("eval.definition", f"{where}.check must be one of {ARTIFACT_CHECKS}")
-                elif kind == "attributed":
-                    if "source" not in e:
-                        raise LedgerError("eval.definition", f"{where}.source missing")
-                elif kind in ("trajectory", "judge"):
-                    if "check" not in e and "question" not in e:
-                        raise LedgerError("eval.definition", f"{where} needs check or question")
-                else:
-                    raise LedgerError("eval.definition", f"{where}.kind must be one of {EVIDENCE_KINDS}")
-    scope = d.get("scope", {})
-    if not isinstance(scope, dict) or not isinstance(scope.get("allowed_paths", []), list):
-        raise LedgerError("eval.definition", "scope.allowed_paths must be a list")
-    parse_iso_duration(d.get("freshness", {}).get("max_age", "PT24H"))
+class NeedsInput(Exception):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+        self.candidates = []
 
 
 def _git(root, *args) -> str:
@@ -83,311 +50,323 @@ def subject_digest(ws: Workspace, kind: str, ref: str) -> str:
             if p.is_file():
                 h.update(f"{name}\0{p.stat().st_mode & 0o777:o}\0{digest.sha256_file(p)}\n".encode())
         return h.hexdigest()
-    if kind == "file_set":
-        h = __import__("hashlib").sha256()
-        for pattern in sorted(ref.split(",")):
-            for p in sorted(ws.root.glob(pattern.strip())):
-                if p.is_file():
-                    h.update(f"{p.relative_to(ws.root)}\0{digest.sha256_file(p)}\n".encode())
-        return h.hexdigest()
-    if kind == "artifact":
-        p = Path(ref)
-        if not p.is_file():
-            raise LedgerError("subject.missing", ref)
-        return digest.sha256_file(p)
     raise LedgerError("subject.kind", f"{kind!r} not in {KINDS}")
 
 
-# ---- project facts -----------------------------------------------------------------------------------
-
-def detect_test_command(root: Path) -> list[str] | None:
-    """The command the project itself declares for its tests, or None."""
-    pkg = root / "package.json"
-    if pkg.is_file():
-        try:
-            if json.loads(pkg.read_text()).get("scripts", {}).get("test"):
-                return ["npm", "test"]
-        except json.JSONDecodeError:
-            pass
-    py = root / "pyproject.toml"
-    if py.is_file() and re.search(r"pytest", py.read_text()):
-        return ["pytest", "-q"]
-    mk = root / "Makefile"
-    if mk.is_file() and re.search(r"^test:", mk.read_text(), re.M):
-        return ["make", "test"]
-    return None
+def default_subject(ws: Workspace) -> tuple[str, str]:
+    """The current commit when the tree is clean, else the worktree."""
+    if _git(ws.root, "status", "--porcelain").strip():
+        return "worktree", str(ws.root)
+    return "git_commit", _git(ws.root, "rev-parse", "HEAD").strip()
 
 
-def _has_command_evidence(d: dict) -> bool:
-    return any(e.get("kind") == "command" for g in ("requirements", "forbidden_effects") for r in d.get(g, []) for e in r["evidence"])
+# ---- facts ------------------------------------------------------------------------------------------------
+
+def _anchor(ws: Workspace, asks: list[dict], explicit: str | None) -> dict:
+    if explicit:
+        return {"kind": "explicit", "ref": explicit, "seal_id": None}
+    seals = [e for e in store.events(ws) if e["type"] == "seal.created"]
+    if seals and seals[-1]["data"]["subject"].get("kind") == "git_commit":
+        return {"kind": "seal", "ref": seals[-1]["data"]["subject"]["ref"], "seal_id": seals[-1]["id"]}
+    base = next((a["base_commit"] for a in asks if a.get("base_commit")), None)
+    if base:
+        return {"kind": "ask_base", "ref": base, "seal_id": None}
+    raise NeedsInput("eval.anchor_unknown: no Seal and no Ask with a base commit; pass --anchor <commit>")
 
 
-def _changes(ws: Workspace, subject: dict) -> dict | None:
-    """Changed files and line counts of a git_commit subject against its parent (or scope.base); None otherwise."""
-    if subject["kind"] != "git_commit":
-        return None
-    ref = subject["ref"]
-    base = subject.get("base") or f"{ref}^"
+def _rename_target(path: str) -> str:
+    path = re.sub(r"\{[^{}]* => ([^{}]*)\}", r"\1", path)
+    return path.split(" => ")[-1]
+
+
+def _count_lines(p: Path) -> int:
     try:
-        _git(ws.root, "rev-parse", "--verify", "--quiet", base)
-    except subprocess.CalledProcessError:
-        return {"base": None, "files": {}, "parent_missing": True}
-    out = _git(ws.root, "diff", "--numstat", base, ref)
+        return p.read_bytes().count(b"\n")
+    except OSError:
+        return 0
+
+
+def _changes(ws: Workspace, anchor: str, subject: dict) -> dict:
+    """Files changed between the anchor and the subject, with line counts. Never their content."""
+    target = [subject["ref"]] if subject["kind"] == "git_commit" else []
+    root = ws.root if subject["kind"] == "git_commit" else Path(subject["ref"])
+    status = {}
+    for line in _git(root, "diff", "--name-status", "-M", anchor, *target).splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            status[parts[-1]] = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed"}.get(parts[0][0], parts[0][0].lower())
     files = {}
-    for line in out.splitlines():
+    for line in _git(root, "diff", "--numstat", "-M", anchor, *target).splitlines():
         parts = line.split("\t")
         if len(parts) == 3:
             add, rm, name = parts
-            files[name] = (0 if add == "-" else int(add)) + (0 if rm == "-" else int(rm))
-    return {"base": base, "files": files}
+            name = _rename_target(name)
+            files[name] = {"path": name, "status": status.get(name, "modified"),
+                           "added": 0 if add == "-" else int(add), "removed": 0 if rm == "-" else int(rm)}
+    if subject["kind"] == "worktree":
+        for name in _git(root, "ls-files", "--others", "--exclude-standard", "-z").split("\0"):
+            if name and name not in files:
+                files[name] = {"path": name, "status": "added", "added": _count_lines(root / name), "removed": 0}
+    ordered = [files[k] for k in sorted(files)]
+    return {"files": ordered, "total_added": sum(f["added"] for f in ordered), "total_removed": sum(f["removed"] for f in ordered)}
 
 
-def _inside(path: str, allowed: list[str]) -> bool:
-    return any(path == a or path.startswith(a if a.endswith("/") else a + "/") for a in allowed)
+def _unrecorded_prompts(ws: Workspace, asks: list[dict]) -> list[int]:
+    """How many prompts that were neither /rf: invocations nor observed Ask submissions followed each Ask."""
+    submitted = {e["data"]["prompt_sha256"] for e in store.events(ws) if e["type"] == "ask.submission"}
+    times = []
+    for path in sorted((ws.rf_dir / "sessions").glob("*/*/prompts.jsonl")):
+        for line in path.read_bytes().splitlines():
+            rec = json.loads(line)
+            if "prompt" not in rec and rec.get("sha256") not in submitted:
+                times.append(rec.get("time", ""))
+    counts = []
+    for i, a in enumerate(asks):
+        start, end = a["time"], asks[i + 1]["time"] if i + 1 < len(asks) else "9"
+        counts.append(sum(1 for t in times if start <= t < end))
+    return counts
 
 
-def _deps(ws: Workspace, ref: str | None) -> str | None:
+def _previous(ws: Workspace, eval_id: str, ask_ids: list[str]) -> dict | None:
+    """The latest completed Eval whose basis shares an Ask with this one: the loop's memory."""
+    recs = [r for r in list_records(ws) if r["state"] == "completed" and r["eval_id"] != eval_id and set(r["basis"]["asks"]) & set(ask_ids)]
+    return load_record(ws, recs[-1]["eval_id"]) if recs else None
+
+
+def open_eval(ws: Workspace, *, anchor: str | None = None, subject_kind: str | None = None, subject_ref: str | None = None, actor: dict | None = None) -> dict:
+    """Write the facts-only brief over every open Ask and append `eval.opened`."""
+    from ringframe import ask as _ask  # ask does not import evaluate
+    asks = _ask.open_asks(ws)
+    if not asks:
+        raise LedgerError("eval.no_open_ask", "nothing to evaluate: every Ask is sealed or cancelled")
+    if bool(subject_kind) != bool(subject_ref):
+        raise LedgerError("subject.kind", "--subject-kind and --subject-ref go together")
+    if subject_kind and subject_kind not in KINDS:
+        raise LedgerError("subject.kind", f"{subject_kind!r} not in {KINDS}")
     try:
-        text = _git(ws.root, "show", f"{ref}:package.json") if ref else (ws.root / "package.json").read_text()
-    except (subprocess.CalledProcessError, OSError):
-        return None
+        _git(ws.root, "rev-parse", "--git-dir")
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        raise LedgerError("eval.no_git", "Eval reads the Git delta; this workspace is not a Git repository") from None
+    kind, ref = (subject_kind, subject_ref) if subject_kind else default_subject(ws)
+    anchor_d = _anchor(ws, asks, anchor)
     try:
-        pkg = json.loads(text)
-    except json.JSONDecodeError:
-        return None
-    return json.dumps({k: pkg.get(k) for k in ("dependencies", "devDependencies", "peerDependencies")}, sort_keys=True)
-
-
-def _artifact(ws: Workspace, root: Path, subject: dict, scope: dict, changes: dict | None, spec: dict) -> dict:
-    out = {"kind": "artifact", "check": spec["check"], "time": sessions.now()}
-    check = spec["check"]
-    if check == "paths_present":
-        missing = [p for p in spec.get("paths", []) if not (root / p).exists()]
-        out.update(paths=spec.get("paths", []), missing=missing, outcome="pass" if spec.get("paths") and not missing else ("indeterminate" if not spec.get("paths") else "fail"))
-    elif check == "deps_unchanged":
-        if changes is None or changes.get("parent_missing"):
-            out.update(outcome="indeterminate", error="no base commit to compare dependency blocks against")
-        else:
-            before, after = _deps(ws, changes["base"]), _deps(ws, subject["ref"])
-            out.update(outcome="pass" if before == after else "fail", before_sha256=digest.sha256_bytes((before or "").encode()), after_sha256=digest.sha256_bytes((after or "").encode()))
-    elif check == "scope_clean":
-        allowed = spec.get("allowed_paths") or scope.get("allowed_paths") or []
-        if changes is None or changes.get("parent_missing"):
-            out.update(outcome="indeterminate", error="no base commit to diff against")
-        elif not allowed:
-            out.update(outcome="indeterminate", error="no allowed_paths in the definition scope")
-        else:
-            unbound = {f: n for f, n in changes["files"].items() if not _inside(f, allowed)}
-            lines = sum(unbound.values())
-            out.update(allowed_paths=allowed, unbound_files=sorted(unbound), unbound_lines=lines, outcome="pass" if lines <= int(spec.get("max_unbound_lines", 0)) else "fail")
-    elif check == "marker_present":
-        marker = spec.get("marker", "")
-        paths = spec.get("paths") or (sorted(changes["files"]) if changes else [])
-        found = [p for p in paths if (root / p).is_file() and marker and marker in (root / p).read_text(errors="replace")]
-        out.update(marker=marker, searched=paths, found=found, outcome="pass" if found else "fail")
-    return out
-
-
-def _run_command(root: Path, spec: dict) -> dict:
-    start = time.monotonic()
-    out = {"kind": "command", "run": spec["run"], "origin": spec.get("origin", "preexisting"), "time": sessions.now()}
-    try:
-        cp = subprocess.run(spec["run"], cwd=root, capture_output=True, timeout=spec.get("timeout_s", COMMAND_TIMEOUT_S))
-        want = spec.get("pass_when", {}).get("exit_code", 0)
-        out.update(exit_code=cp.returncode, stdout_sha256=digest.sha256_bytes(cp.stdout), stdout_head=cp.stdout[:STDOUT_HEAD].decode("utf-8", "replace"),
-                   stderr_head=cp.stderr[:STDOUT_HEAD].decode("utf-8", "replace"), outcome="pass" if cp.returncode == want else "fail")
-    except subprocess.TimeoutExpired:
-        out.update(outcome="indeterminate", error="timeout")
-    except OSError as e:
-        out.update(outcome="indeterminate", error=str(e))
-    out["duration_ms"] = int((time.monotonic() - start) * 1000)
-    return out
-
-
-def _status(outcomes: list[str]) -> str:
-    if not outcomes:
-        return "uncovered"
-    if "fail" in outcomes:
-        return "covered-fail"
-    if all(o == "pass" for o in outcomes):
-        return "covered-pass"
-    return "indeterminate"
-
-
-def _evaluate(ws: Workspace, root: Path, subject: dict, scope: dict, changes: dict | None, items: list[dict], observations: list[dict], limitations: list[str]) -> list[dict]:
-    results = []
-    for item in items:
-        evidence = []
-        for spec in item["evidence"]:
-            kind = spec["kind"]
-            if kind == "command":
-                evidence.append(_run_command(root, spec))
-            elif kind == "artifact":
-                evidence.append(_artifact(ws, root, subject, scope, changes, spec))
-            elif kind in ("trajectory", "judge"):
-                evidence.append({"kind": kind, **{k: v for k, v in spec.items() if k != "kind"}, "outcome": "indeterminate", "error": f"{kind} evidence is not collected by this version"})
-            else:
-                for obs in observations:
-                    if obs.get("requirement") == item["id"] and obs.get("source") == spec["source"]:
-                        evidence.append({"kind": "attributed", **obs})
-        # An agent-written test is not self-certifying: it counts only beside an independent fact that the change is what it tests.
-        independent = [e for e in evidence if e["kind"] in ("artifact", "trajectory") and e["outcome"] == "pass"]
-        for e in evidence:
-            if e["kind"] == "command" and e.get("origin") == "agent" and e["outcome"] == "pass" and not independent:
-                e["outcome"] = "indeterminate"
-                e["note"] = "test written by the change under test; needs an artifact or trajectory fact beside it"
-                limitations.append(f"{item['id']}: tests written by the change under test")
-        outcomes = [e["outcome"] for e in evidence]
-        passing = [e for e in evidence if e["outcome"] == "pass"]
-        strongest = min((CLASS[e["kind"]] for e in passing), default=None)
-        results.append({"id": item["id"], "text": item["text"], "required": item.get("required", True),
-                        "status": _status(outcomes), "strongest": strongest, "evidence": evidence})
-    return results
-
-
-def freeze(ws: Workspace, *, subject_kind: str, subject_ref: str, definition: dict, ask_id: str | None = None, contract: dict | None = None,
-           attested_only: bool = False) -> dict:
-    validate_definition(definition)
-    if subject_kind not in KINDS:
-        raise LedgerError("subject.kind", subject_kind)
-    scope = dict(definition.get("scope", {}))
-    root = Path(subject_ref) if subject_kind == "worktree" else ws.root
-    test_command = scope.get("test_command") or detect_test_command(root)
-    if test_command:
-        scope["test_command"] = test_command
-    if test_command and not _has_command_evidence(definition) and not attested_only:
-        raise LedgerError("eval.no_command_evidence", f"the project declares a test command ({' '.join(test_command)}) but the definition runs nothing; "
-                          "add command evidence or pass --attested-only to record an attestation-only Eval")
+        _git(ws.root, "rev-parse", "--verify", "--quiet", f"{anchor_d['ref']}^{{commit}}")
+    except subprocess.CalledProcessError:
+        raise LedgerError("eval.anchor_missing", f"{anchor_d['ref']} is not a commit in this workspace") from None
+    subject = {"kind": kind, "ref": ref, "sha256": subject_digest(ws, kind, ref)}
     eval_id = ids.new_id("evl")
-    frozen = {**definition, "scope": scope, "eval_id": eval_id, "subject": {"kind": subject_kind, "ref": subject_ref},
-              "basis": {"ask_id": ask_id} if ask_id else {"contract": contract or {}}, "attested_only": bool(attested_only), "frozen_at": sessions.now()}
-    ref = store.publish(ws, f"evals/{eval_id}.definition.json", store.canonical(frozen) + b"\n", role="eval_definition")
-    return {"eval_id": eval_id, "definition": ref}
+    counts = _unrecorded_prompts(ws, asks)
+    previous = [{"eval_id": r["eval_id"], "verdict": r["verdict"], "confidence": r["confidence"], "time": r["completed_at"]}
+                for r in list_records(ws) if r["state"] == "completed" and set(r["basis"]["asks"]) & {a["ask_id"] for a in asks}]
+    limitations = ["the brief describes the ledger and the Git delta only; RingFrame runs none of the project's commands",
+                   "plain prompts are counted, never stored; changes no Ask explains may follow an unrecorded instruction"]
+    if kind == "worktree":
+        limitations.append("subject is the uncommitted worktree")
+    brief = {"schema": BRIEF_SCHEMA, "eval_id": eval_id, "time": sessions.now(), "workspace": ws.describe(), "anchor": anchor_d, "subject": subject,
+             "asks": [{"ask_id": a["ask_id"], "order": i + 1, "title": a["title"], "prompt_path": a["prompt"]["path"], "compiled": a["time"],
+                       "confirmed": a["confirmed_at"], "submission": a["submission"], "links": a["links"], "unrecorded_prompts_after": counts[i]}
+                      for i, a in enumerate(asks)],
+             "changes": _changes(ws, anchor_d["ref"], subject), "previous_evals": previous, "limitations": limitations}
+    ref_ = store.publish(ws, f"evals/{eval_id}/brief.json", store.canonical(brief) + b"\n", role="eval_brief")
+    data = {"brief": ref_, "basis": {"asks": [a["ask_id"] for a in asks], "unrecorded_prompts": sum(counts)}, "anchor": anchor_d, "subject": subject}
+    ev = _event("eval.opened", eval_id, actor, data, [{"rel": "evaluates", "id": a["ask_id"]} for a in asks])
+    store.append(ws, ev)
+    return {"eval_id": eval_id, "brief_path": str(ws.rf_dir / ref_["path"]), "brief": ref_, **data,
+            "changes": {"files": len(brief["changes"]["files"]), "added": brief["changes"]["total_added"], "removed": brief["changes"]["total_removed"]}}
 
 
-def _floor(required: list[dict]) -> str | None:
-    """The weakest 'strongest' class among the required requirements that passed; None when nothing passed."""
-    classes = [r["strongest"] for r in required if r["strongest"]]
-    return max(classes) if classes else None
+def _event(type_, id_, actor, data, links):
+    ev = {"schema": store.SCHEMA, "event_id": ids.new_id("evt"), "type": type_, "time": sessions.now(), "id": id_,
+          "actor": actor or {"kind": "human", "id": "local-user", "authority": "interactive"}, "links": links, "data": data}
+    schema.validate_event(ev)
+    return ev
 
 
-def run(ws: Workspace, eval_id: str, observations: list[dict] | None = None, definition_sha256: str | None = None) -> dict:
-    def_path = ws.rf_dir / f"evals/{eval_id}.definition.json"
-    if not def_path.exists():
-        raise LedgerError("eval.missing", eval_id)
-    if (ws.rf_dir / f"evals/{eval_id}.json").exists():
-        raise LedgerError("ledger.immutable", f"evals/{eval_id}.json")
-    raw = def_path.read_bytes()
-    definition = json.loads(raw)
-    definition_sha = digest.sha256_bytes(raw)
-    if (store.canonical(definition) + b"\n" != raw or definition.get("eval_id") != eval_id
-            or (definition_sha256 and definition_sha256 != definition_sha)):
-        raise LedgerError("eval.definition_changed", eval_id)
-    validate_definition(definition)
-    subject = definition["subject"]
-    scope = definition.get("scope", {})
-    before = subject_digest(ws, subject["kind"], subject["ref"])
-    root = Path(subject["ref"]) if subject["kind"] == "worktree" else ws.root
-    changes = _changes(ws, subject)
-    limitations = ["attributed observations are not independently verified", "commands are caller-selected"]
-    requirements = _evaluate(ws, root, subject, scope, changes, definition.get("requirements", []), observations or [], limitations)
-    forbidden = _evaluate(ws, root, subject, scope, changes, definition.get("forbidden_effects", []), observations or [], limitations)
-    process = _evaluate(ws, root, subject, scope, changes, definition.get("process", []), observations or [], limitations)
-    after = subject_digest(ws, subject["kind"], subject["ref"])
-    basis = dict(definition["basis"])
-    if basis.get("ask_id"):
-        from ringframe import ask as _ask  # local import: ask depends on sessions/profiles, not on evaluate
-        rec = _ask._by_id(ws).get(basis["ask_id"])
-        basis["submission"] = _ask.submission_grade(rec) if rec and rec["compiled"] else "unobserved"
-        limitations.append(f"submission of the compiled prompt: {basis['submission']}")
-    observed = [f["id"] for f in forbidden if f["status"] == "covered-fail"]
-    required = [r for r in requirements if r["required"]]
-    floor = _floor(required)
-    if before != after:
+# ---- judgements ---------------------------------------------------------------------------------------------
+
+def _need(cond, code, msg):
+    if not cond:
+        raise LedgerError(code, msg)
+
+
+def _judge(j, code, where):
+    _need(isinstance(j, dict) and isinstance(j.get("host"), str) and isinstance(j.get("angle"), str), code, f"{where}.judge needs host and angle")
+    _need(j.get("independence") in INDEPENDENCE, code, f"{where}.judge.independence must be one of {INDEPENDENCE}")
+
+
+def validate_intent(intent: dict, brief_sha256: str, ask_ids: list[str]) -> None:
+    code = "eval.intent"
+    _need(isinstance(intent, dict) and intent.get("schema") == INTENT_SCHEMA, code, f"schema must be {INTENT_SCHEMA}")
+    _need(intent.get("brief_sha256") == brief_sha256, "eval.brief_mismatch", "intent.brief_sha256 is not this Eval's brief")
+    _judge(intent.get("judge"), code, "intent")
+    items = intent.get("items")
+    _need(isinstance(items, list) and items, code, "items must be a non-empty list")
+    seen = set()
+    for i, it in enumerate(items):
+        _need(isinstance(it, dict) and isinstance(it.get("id"), str) and it["id"] not in seen, code, f"items[{i}].id missing or duplicate")
+        seen.add(it["id"])
+        _need(isinstance(it.get("text"), str) and it["text"].strip(), code, f"items[{i}].text missing")
+        _need(it.get("ask_id") in ask_ids, code, f"items[{i}].ask_id is not an open Ask of this Eval")
+        _need(it.get("status") in ITEM_STATUS, code, f"items[{i}].status must be one of {ITEM_STATUS}")
+
+
+def validate_judgement(j: dict, brief_sha256: str, intent_sha256: str, items: list[dict], where: str) -> None:
+    code = "eval.judgement"
+    _need(isinstance(j, dict) and j.get("schema") == JUDGEMENT_SCHEMA, code, f"{where}: schema must be {JUDGEMENT_SCHEMA}")
+    _need(j.get("brief_sha256") == brief_sha256, "eval.brief_mismatch", f"{where}: brief_sha256 is not this Eval's brief")
+    _need(j.get("intent_sha256") in (None, intent_sha256), "eval.brief_mismatch", f"{where}: intent_sha256 is not this Eval's intent")
+    _judge(j.get("judge"), code, where)
+    ids_ = {it["id"] for it in items}
+    active = {it["id"] for it in items if it["status"] == "active"}
+    votes = j.get("votes")
+    _need(isinstance(votes, list), code, f"{where}.votes must be a list")
+    voted = set()
+    for i, v in enumerate(votes):
+        _need(isinstance(v, dict) and v.get("item") in ids_, code, f"{where}.votes[{i}].item is not an intent item")
+        _need(v.get("vote") in VOTES, code, f"{where}.votes[{i}].vote must be one of {VOTES}")
+        voted.add(v["item"])
+    _need(active <= voted, code, f"{where}: no vote for active items {sorted(active - voted)}")
+    for i, d in enumerate(j.get("drift", [])):
+        _need(isinstance(d, dict) and isinstance(d.get("path"), str) and d["path"], code, f"{where}.drift[{i}].path missing")
+        _need(d.get("classification") in CLASSIFICATIONS, code, f"{where}.drift[{i}].classification must be one of {CLASSIFICATIONS}")
+    for k in ("basis_notes", "commands_run"):
+        _need(isinstance(j.get(k, []), list), code, f"{where}.{k} must be a list")
+
+
+def _majority(values: list[str], tie: str) -> tuple[str, float]:
+    counts = {}
+    for v in values:
+        counts[v] = counts.get(v, 0) + 1
+    best = max(counts.values())
+    winners = [k for k, n in counts.items() if n == best]
+    return (winners[0] if len(winners) == 1 else tie), best / len(values)
+
+
+def _aggregate(items: list[dict], judgements: list[dict], changed_paths: list[str]) -> dict:
+    active = [it for it in items if it["status"] == "active"]
+    table = []
+    for it in active:
+        votes = [{"angle": j["judge"]["angle"], "vote": next(v["vote"] for v in j["votes"] if v["item"] == it["id"]),
+                  "reason": next((v.get("reason", "") for v in j["votes"] if v["item"] == it["id"]), "")} for j in judgements]
+        maj, agr = _majority([v["vote"] for v in votes], "unknown")
+        table.append({**it, "majority": maj, "agreement": round(agr, 2), "votes": votes})
+    by_path = {}
+    for j in judgements:
+        for d in j.get("drift", []):
+            by_path.setdefault(d["path"], []).append({"angle": j["judge"]["angle"], "classification": d["classification"], "finding": d.get("finding", "")})
+    paths = []
+    for path in sorted(by_path):
+        # A judge silent on a path found nothing there: it counts as `required`, so one loud judge cannot make a
+        # finding unanimous. Agreement is always over every judge.
+        votes = [f["classification"] for f in by_path[path]] + ["required"] * (len(judgements) - len(by_path[path]))
+        maj, agr = _majority(votes, "unexplained")
+        paths.append({"path": path, "classification": maj, "agreement": round(agr, 2), "mentions": len(by_path[path]), "findings": by_path[path]})
+    unmentioned = [p for p in changed_paths if p not in by_path]
+    commission = [p for p in paths if p["classification"] == "unexplained"]
+    omission = [it["id"] for it in table if it["majority"] != "yes"]
+    if not active:
         verdict = "incomplete"
-        limitations.append("subject.changed")
-    elif any(r["status"] == "covered-fail" for r in required) or observed:
+    elif any(it["majority"] == "no" for it in table) or commission:
         verdict = "drifted"
-    elif all(r["status"] == "covered-pass" for r in required) and all(f["status"] == "covered-pass" for f in forbidden):
-        # attestation-only: no required requirement has any independent evidence (command, artifact, trajectory, judge)
-        attested_only = bool(required) and all(r["strongest"] == "E5" for r in required)
-        verdict = "attested" if attested_only else "aligned"
-        if attested_only:
-            limitations.append("attested: every required requirement rests on the person's word alone; nothing ran")
-        elif floor == "E5":
-            limitations.append("evidence floor E5: " + ", ".join(r["id"] for r in required if r["strongest"] == "E5") + " rest on the person's word alone")
+    elif all(it["majority"] == "yes" for it in table):
+        verdict = "aligned"
     else:
         verdict = "incomplete"
-    # drift, measured from the artifact (ADR-0009)
-    allowed = scope.get("allowed_paths") or []
-    unbound = {f: n for f, n in (changes or {}).get("files", {}).items() if allowed and not _inside(f, allowed)}
-    total_lines = sum((changes or {}).get("files", {}).values()) or 0
-    unmet = [r["id"] for r in required if r["status"] != "covered-pass"]
-    drift = {"commission": {"rate": (sum(unbound.values()) / total_lines) if total_lines and allowed else (0.0 if allowed else None),
-                            "unbound_files": sorted(unbound), "unbound_lines": sum(unbound.values()), "changed_files": sorted((changes or {}).get("files", {})) if changes else None},
-             "omission": {"rate": (len(unmet) / len(required)) if required else 0.0, "unmet": unmet},
-             "process": {p["id"]: p["status"] for p in process}}
-    if not allowed:
-        limitations.append("commission drift not measured: the definition declares no scope.allowed_paths")
-    record = {"schema": "ringframe.eval/1", "eval_id": eval_id, "basis": basis,
-              "definition": {"path": f"evals/{eval_id}.definition.json", "sha256": definition_sha},
-              "subject": {**subject, "sha256_before": before, "sha256_after": after},
-              "requirements": requirements, "forbidden_effects": forbidden, "process": process, "verdict": verdict, "evidence_floor": floor, "drift": drift,
-              "freshness": definition.get("freshness", {"max_age": "PT24H"}), "limitations": limitations, "time": sessions.now()}
-    ref = store.publish(ws, f"evals/{eval_id}.json", store.canonical(record) + b"\n", role="eval_record")
-    counts = {k: sum(1 for r in requirements if r["status"] == k.replace("_", "-")) for k in ("covered_pass", "covered_fail", "uncovered", "indeterminate")}
-    ask_id = definition["basis"].get("ask_id")
-    ev = {"schema": store.SCHEMA, "event_id": ids.new_id("evt"), "type": "eval.completed", "time": record["time"], "id": eval_id,
-          "actor": {"kind": "human", "id": "local-user", "authority": "interactive"},
-          "links": [{"rel": "evaluates", "id": ask_id}] if ask_id else [],
-          "data": {"subject": record["subject"], "definition_sha256": definition_sha, "verdict": verdict, "evidence_floor": floor, "counts": counts,
-                   "forbidden_effects_observed": observed, "drift": {"commission_rate": drift["commission"]["rate"], "omission_rate": drift["omission"]["rate"]}, "artifact": ref,
-                   "definition": {"role": "eval_definition", "path": record["definition"]["path"], "bytes": len(raw), "sha256": definition_sha},
-                   "limitations": limitations}}
-    schema.validate_event(ev)
-    store.append(ws, ev)
+    # every active item decides; a path decides when its majority is a finding or when any judge dissented from `required`
+    deciding = [it["agreement"] for it in table] + [p["agreement"] for p in paths if p["classification"] != "required" or p["agreement"] < 1.0]
+    return {"verdict": verdict, "confidence": round(min(deciding), 2) if deciding else 0.0, "items": table,
+            "drift": {"omission": omission, "commission": [{k: p[k] for k in ("path", "classification", "agreement")} for p in commission],
+                      "paths": paths, "unmentioned": unmentioned}}
+
+
+def _norm(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def _delta(current: dict, previous: dict | None) -> dict | None:
+    if previous is None:
+        return None
+    met = lambda rec: {_norm(it["text"]) for it in rec["items"] if it["majority"] == "yes"}
+    unmet = lambda rec: {_norm(it["text"]) for it in rec["items"] if it["majority"] != "yes"}
+    paths = lambda rec: {c["path"] for c in rec["drift"]["commission"]}
+    return {"closed": sorted(met(current) & unmet(previous)), "opened": sorted(unmet(current) - unmet(previous)),
+            "commission_removed": sorted(paths(previous) - paths(current)), "commission_added": sorted(paths(current) - paths(previous)),
+            "matching": "items matched by normalized text; a reworded item counts as new"}
+
+
+def close_eval(ws: Workspace, eval_id: str, *, intent: dict, judgements: list[dict], actor: dict | None = None) -> dict:
+    """Validate the intent and the judgements, aggregate, append `eval.completed`."""
+    brief_path = ws.rf_dir / f"evals/{eval_id}/brief.json"
+    if not brief_path.exists() or not any(e["type"] == "eval.opened" and e["id"] == eval_id for e in store.events(ws)):
+        raise LedgerError("eval.missing", eval_id)
+    if (ws.rf_dir / f"evals/{eval_id}/record.json").exists():
+        raise LedgerError("ledger.immutable", f"evals/{eval_id}/record.json")
+    brief_sha = digest.sha256_file(brief_path)
+    brief = json.loads(brief_path.read_bytes())
+    ask_ids = [a["ask_id"] for a in brief["asks"]]
+    if len(judgements) < MIN_JUDGES:
+        raise LedgerError("eval.too_few_judges", f"{len(judgements)} judgements; at least {MIN_JUDGES} independent angles are required")
+    validate_intent(intent, brief_sha, ask_ids)
+    intent_bytes = store.canonical(intent) + b"\n"
+    intent_sha = digest.sha256_bytes(intent_bytes)
+    for n, j in enumerate(judgements, 1):
+        validate_judgement(j, brief_sha, intent_sha, intent["items"], f"judgement[{n}]")
+    subject = brief["subject"]
+    now_digest = subject_digest(ws, subject["kind"], subject["ref"])
+    limitations = [f"the verdict is a judgement by {len(judgements)} sub-agents; agreement is its confidence, nothing here is certain",
+                   "RingFrame ran none of the project's commands; commands_run in a judgement is that judge's own report"]
+    agg = _aggregate(intent["items"], judgements, [f["path"] for f in brief["changes"]["files"]])
+    if now_digest != subject["sha256"]:
+        agg["verdict"] = "incomplete"
+        limitations.append("subject.changed: the subject changed between open and close")
+    if not agg["items"]:
+        limitations.append("no active intent item: nothing to judge")
+    if any(j["judge"]["independence"] == "shared_context" for j in judgements):
+        limitations.append("some judges shared one context; their agreement overstates independence")
+    n_unrecorded = sum(a["unrecorded_prompts_after"] for a in brief["asks"])
+    if n_unrecorded:
+        limitations.append(f"{n_unrecorded} unrecorded prompts followed the open Asks; unexplained changes may follow them")
+    intent_ref = store.publish(ws, f"evals/{eval_id}/intent.json", intent_bytes, role="eval_intent")
+    j_refs = [store.publish(ws, f"evals/{eval_id}/judgement-{n}.json", store.canonical(j) + b"\n", role="eval_judgement") for n, j in enumerate(judgements, 1)]
+    previous = _previous(ws, eval_id, ask_ids)
+    record = {"schema": RECORD_SCHEMA, "eval_id": eval_id, "time": sessions.now(),
+              "basis": {"asks": ask_ids, "anchor": brief["anchor"], "unrecorded_prompts": n_unrecorded},
+              "subject": {**subject, "sha256_at_close": now_digest}, "brief": {"path": f"evals/{eval_id}/brief.json", "sha256": brief_sha},
+              "intent": {"path": intent_ref["path"], "sha256": intent_sha, "judge": intent["judge"], "items": len(intent["items"]), "active": len(agg["items"])},
+              "judgements": [{"path": r["path"], "sha256": r["sha256"], "judge": j["judge"]} for r, j in zip(j_refs, judgements)],
+              "verdict": agg["verdict"], "confidence": agg["confidence"], "items": agg["items"], "drift": agg["drift"],
+              "follows": previous["eval_id"] if previous else None, "delta": _delta(agg, previous), "limitations": limitations}
+    ref = store.publish(ws, f"evals/{eval_id}/record.json", store.canonical(record) + b"\n", role="eval_record")
+    data = {"basis": record["basis"], "subject": record["subject"], "verdict": record["verdict"], "confidence": record["confidence"],
+            "items": {"active": len(agg["items"]), "met": sum(1 for it in agg["items"] if it["majority"] == "yes"), "omission": len(agg["drift"]["omission"])},
+            "commission": [c["path"] for c in agg["drift"]["commission"]], "judges": [j["judge"] for j in judgements],
+            "intent": intent_ref, "judgements": j_refs, "artifact": ref, "limitations": limitations}
+    links = [{"rel": "evaluates", "id": a} for a in ask_ids] + ([{"rel": "supersedes", "id": previous["eval_id"]}] if previous else [])
+    store.append(ws, _event("eval.completed", eval_id, actor, data, links))
     return record
 
 
-def scaffold(ws: Workspace, *, subject_ref: str, title: str, ask_id: str | None) -> dict:
-    """A draft definition built from facts: the project's test command, the commit's changed paths, artifact checks.
-
-    The skill adds requirements the prompt states and attributed evidence only for what no fact can see."""
-    test_command = detect_test_command(ws.root)
-    changes = _changes(ws, {"kind": "git_commit", "ref": subject_ref}) or {"files": {}}
-    dirs = sorted({(f.split("/")[0] + "/") if "/" in f else f for f in changes.get("files", {})})
-    allowed = [d for d in dirs if d.endswith("/")] or dirs
-    tests_existed = bool(changes.get("base")) and any(n.startswith(("tests/", "test/", "spec/")) for n in _git(ws.root, "ls-tree", "-r", "--name-only", changes["base"]).splitlines()) if changes.get("base") else False
-    req_evidence = []
-    if test_command:
-        req_evidence.append({"kind": "command", "run": test_command, "pass_when": {"exit_code": 0}, "origin": "preexisting" if tests_existed else "agent"})
-    req_evidence.append({"kind": "attributed", "source": "human:local-user"})
-    d = {"schema": DEFINITION_SCHEMA, "scope": {"allowed_paths": allowed, **({"test_command": test_command} if test_command else {})},
-         "requirements": [{"id": "R1", "text": title, "required": True, "evidence": req_evidence}],
-         "forbidden_effects": [{"id": "F1", "text": "no new dependency", "evidence": [{"kind": "artifact", "check": "deps_unchanged"}]},
-                               {"id": "F2", "text": "no change outside the allowed paths", "evidence": [{"kind": "artifact", "check": "scope_clean", "max_unbound_lines": 0}]}],
-         "freshness": {"max_age": "PT24H"}}
-    if ask_id:
-        d["basis_hint"] = {"ask_id": ask_id}
-    return d
-
-
 def load_record(ws: Workspace, eval_id: str) -> dict | None:
-    p = ws.rf_dir / f"evals/{eval_id}.json"
+    p = ws.rf_dir / f"evals/{eval_id}/record.json"
     return json.loads(p.read_bytes()) if p.exists() else None
 
 
 def list_records(ws: Workspace) -> list[dict]:
-    """Every Eval in this workspace, frozen or completed, oldest first: what Seal chooses from."""
+    """Every Eval in this workspace, opened or completed, oldest first."""
     out = []
     d = ws.rf_dir / "evals"
-    for defn in sorted(d.glob("*.definition.json")) if d.exists() else []:
-        eval_id = defn.name[: -len(".definition.json")]
-        frozen = json.loads(defn.read_bytes())
+    for brief_path in sorted(d.glob("*/brief.json"), key=lambda p: json.loads(p.read_bytes())["time"]) if d.exists() else []:
+        brief = json.loads(brief_path.read_bytes())
+        eval_id = brief["eval_id"]
         rec = load_record(ws, eval_id)
-        out.append({"eval_id": eval_id, "state": "completed" if rec else "frozen", "frozen_at": frozen.get("frozen_at"),
-                    "basis": frozen.get("basis"), "subject": frozen.get("subject"),
-                    "verdict": rec.get("verdict") if rec else None, "evidence_floor": rec.get("evidence_floor") if rec else None,
-                    "completed_at": rec.get("time") if rec else None,
-                    "path": f"evals/{eval_id}.json" if rec else f"evals/{eval_id}.definition.json"})
+        out.append({"eval_id": eval_id, "state": "completed" if rec else "opened", "opened_at": brief["time"],
+                    "basis": {"asks": [a["ask_id"] for a in brief["asks"]]}, "anchor": brief["anchor"], "subject": brief["subject"],
+                    "verdict": rec["verdict"] if rec else None, "confidence": rec["confidence"] if rec else None,
+                    "completed_at": rec["time"] if rec else None, "path": f"evals/{eval_id}/record.json" if rec else f"evals/{eval_id}/brief.json"})
     return out
+
+
+def latest_for(ws: Workspace, ask_ids: list[str]) -> dict | None:
+    """The latest completed Eval whose basis shares an Ask with the given set."""
+    recs = [r for r in list_records(ws) if r["state"] == "completed" and set(r["basis"]["asks"]) & set(ask_ids)]
+    return load_record(ws, recs[-1]["eval_id"]) if recs else None

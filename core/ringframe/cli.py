@@ -116,28 +116,21 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--kind", default="ask")
 
     e = sub.add_parser("eval").add_subparsers(dest="sub", required=True)
-    f = e.add_parser("freeze")
-    f.add_argument("--ask")
-    f.add_argument("--contract")
-    f.add_argument("--subject-kind", required=True, choices=evaluate.KINDS)
-    f.add_argument("--subject-ref", required=True)
-    f.add_argument("--definition", required=True, help="inline JSON or @file")
-    f.add_argument("--attested-only", action="store_true", help="record an Eval that runs nothing although the project declares tests")
+    op = e.add_parser("open", help="write the facts-only brief over every open Ask")
+    op.add_argument("--anchor", help="commit to diff from (default: last Seal's subject, else the earliest open Ask's base commit)")
+    op.add_argument("--subject-kind", choices=evaluate.KINDS, help="default: HEAD when the tree is clean, else the worktree")
+    op.add_argument("--subject-ref")
+    cl = e.add_parser("close", help="aggregate the intent and the judgements into a verdict with confidence")
+    cl.add_argument("--eval", required=True)
+    cl.add_argument("--intent", required=True, help="inline JSON or @file (ringframe.eval-intent/1)")
+    cl.add_argument("--judgement", action="append", required=True, help="inline JSON or @file (ringframe.eval-judgement/1), at least three")
     e.add_parser("list")
-    sc = e.add_parser("scaffold", help="draft a definition from facts: test command, changed paths, artifact checks")
-    sc.add_argument("--subject-ref", required=True)
-    sc.add_argument("--title", required=True)
-    sc.add_argument("--ask")
-    rn = e.add_parser("run")
-    rn.add_argument("--eval", required=True)
-    rn.add_argument("--definition-sha256")
-    rn.add_argument("--observation", action="append", help="inline JSON or @file")
 
     se = sub.add_parser("seal").add_subparsers(dest="sub", required=True)
     sc = se.add_parser("create")
-    sc.add_argument("--eval", required=True)
     sc.add_argument("--disposition", required=True, choices=seal.DISPOSITIONS)
-    sc.add_argument("--acknowledge", action="append")
+    sc.add_argument("--eval", help="default: the latest completed Eval over the open Asks")
+    sc.add_argument("--note", help="the person's words, recorded verbatim")
     ck = se.add_parser("check")
     ck.add_argument("--seal", required=True)
 
@@ -227,15 +220,12 @@ def _dispatch(ns, ws) -> tuple[int, object]:
     if ns.cmd == "eval":
         if ns.sub == "list":
             return 0, {"evals": evaluate.list_records(ws)}
-        if ns.sub == "scaffold":
-            return 0, evaluate.scaffold(ws, subject_ref=ns.subject_ref, title=ns.title, ask_id=ns.ask)
-        if ns.sub == "freeze":
-            contract = _json_arg(ns.contract) if ns.contract else None
-            return 0, evaluate.freeze(ws, subject_kind=ns.subject_kind, subject_ref=ns.subject_ref, definition=_json_arg(ns.definition), ask_id=ns.ask, contract=contract, attested_only=ns.attested_only)
-        return 0, evaluate.run(ws, ns.eval, observations=[_json_arg(o) for o in ns.observation or []], definition_sha256=ns.definition_sha256)
+        if ns.sub == "open":
+            return 0, evaluate.open_eval(ws, anchor=ns.anchor, subject_kind=ns.subject_kind, subject_ref=ns.subject_ref, actor=actor)
+        return 0, evaluate.close_eval(ws, ns.eval, intent=_json_arg(ns.intent), judgements=[_json_arg(j) for j in ns.judgement], actor=actor)
     if ns.cmd == "seal":
         if ns.sub == "create":
-            return 0, seal.create(ws, ns.eval, ns.disposition, acknowledge=ns.acknowledge, actor=actor)
+            return 0, seal.create(ws, ns.disposition, eval_id=ns.eval, note=ns.note, actor=actor)
         result = seal.check(ws, ns.seal)
         return (0 if result["fresh"] else 2), result
     if ns.cmd == "ledger":
@@ -284,7 +274,7 @@ def main(argv=None) -> int:
     except (json.JSONDecodeError, ValueError, FileNotFoundError) as exc:
         _emit({"error": "usage", "detail": str(exc)}, ns.json)
         return 1
-    except NeedsInput as exc:
+    except (NeedsInput, evaluate.NeedsInput) as exc:
         _emit({"needs_input": exc.reason, "candidates": exc.candidates}, ns.json)
         return 3
     except Refused as exc:

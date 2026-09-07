@@ -7,7 +7,7 @@ import sys
 import pytest
 
 from ringframe import cli
-from tests.test_eval import definition, head
+from tests.test_eval import commit, head, intent, judgement, two_asks_and_work
 
 CLS = json.dumps({"task": ["plan"], "result": "plan", "interaction": "approval_gated", "horizon": "session", "effects": ["read"]})
 ROUTE = json.dumps({"fits": "f", "alternatives": [], "continuation": "c", "effects": "e", "gaps": []})
@@ -121,30 +121,40 @@ def test_capture_of_a_pasted_prompt_records_observed_submission(repo, monkeypatc
 
 
 def test_eval_and_seal_cli(repo, monkeypatch, tmp_path):
-    d = tmp_path / "def.json"
-    d.write_text(json.dumps(definition()))
-    obs = tmp_path / "obs.json"
-    obs.write_text(json.dumps({"requirement": "R2", "source": "human:local-user", "scope": "s", "time": "t", "statement": "ok", "outcome": "pass", "limitations": []}))
-    code, out, _ = run(repo, "eval", "freeze", "--subject-kind", "git_commit", "--subject-ref", head(repo), "--definition", f"@{d}", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and set(out) == {"eval_id", "definition"}
-    code, rec, _ = run(repo, "eval", "run", "--eval", out["eval_id"], "--definition-sha256", out["definition"]["sha256"], "--observation", f"@{obs}", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and rec["verdict"] == "aligned"
-    code, out2, _ = run(repo, "eval", "run", "--eval", out["eval_id"], "--json", monkeypatch=monkeypatch)
-    assert code == 2 and out2["error"] == "ledger.immutable"
-    code, receipt, _ = run(repo, "seal", "create", "--eval", rec["eval_id"], "--disposition", "accepted", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and receipt["disposition"] == "accepted"
-    code, out, _ = run(repo, "seal", "create", "--eval", rec["eval_id"], "--disposition", "accepted", "--json", monkeypatch=monkeypatch)
-    assert code == 2 and out["error"] == "seal.refused" and out["refusal_codes"] == ["seal.duplicate"]
+    ws, a, b, sha = two_asks_and_work(repo)
+    code, out, _ = run(repo, "eval", "open", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["basis"]["asks"] == [a, b] and out["subject"]["ref"] == sha and out["brief_path"].endswith("brief.json")
+    sha_b = out["brief"]["sha256"]
+    items = [{"id": "i1", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
+    (tmp_path / "intent.json").write_text(json.dumps(intent(sha_b, items)))
+    files = []
+    for n, ang in enumerate(("coverage", "drift", "adversary")):
+        f = tmp_path / f"j{n}.json"
+        f.write_text(json.dumps(judgement(sha_b, ang, {"i1": "yes"}, {"docs/notes.md": "unexplained"})))
+        files += ["--judgement", f"@{f}"]
+    code, out2, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files[:4], "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out2["error"] == "eval.too_few_judges"
+    code, rec, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files, "--json", monkeypatch=monkeypatch)
+    assert code == 0 and rec["verdict"] == "drifted" and rec["confidence"] == 1.0 and rec["drift"]["commission"][0]["path"] == "docs/notes.md"
+    code, out3, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files, "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out3["error"] == "ledger.immutable"
+    code, listed, _ = run(repo, "eval", "list", "--json", monkeypatch=monkeypatch)
+    assert [e["verdict"] for e in listed["evals"]] == ["drifted"]
+    code, receipt, _ = run(repo, "seal", "create", "--disposition", "accepted", "--note", "shipping the drift knowingly", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and receipt["disposition"] == "accepted" and receipt["eval"]["verdict"] == "drifted" and receipt["note"] == "shipping the drift knowingly"
+    code, out, _ = run(repo, "seal", "create", "--disposition", "accepted", "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out["error"] == "seal.refused" and out["refusal_codes"] == ["seal.no_open_ask"]
+    code, out, _ = run(repo, "eval", "open", "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out["error"] == "eval.no_open_ask"
     code, out, _ = run(repo, "seal", "check", "--seal", receipt["seal_id"], "--json", monkeypatch=monkeypatch)
-    assert code == 0 and out["fresh"] is True
-    (repo / "README.md").write_text("changed\n")
-    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "change"], check=True)
+    assert code == 0 and out["fresh"] is True and out["subject_matches"] is True
+    commit(repo, {"README.md": "changed\n"}, "change")
     code, out, _ = run(repo, "seal", "check", "--seal", receipt["seal_id"], "--json", monkeypatch=monkeypatch)
-    assert code == 0 and out["fresh"] is True  # git_commit subject is pinned to the old commit's tree
+    assert code == 0 and out["fresh"] is True and out["subject_matches"] is False  # a fact, not a refusal
     code, out, _ = run(repo, "seal", "check", "--seal", "sel_nope", "--json", monkeypatch=monkeypatch)
     assert code == 2 and out["fresh"] is False
     with pytest.raises(SystemExit) as e:
-        run(repo, "seal", "create", "--eval", rec["eval_id"], "--disposition", "shipped", "--json", monkeypatch=monkeypatch)
+        run(repo, "seal", "create", "--disposition", "shipped", "--json", monkeypatch=monkeypatch)
     assert e.value.code == 1
 
 

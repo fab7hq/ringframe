@@ -1,35 +1,39 @@
 ---
 name: seal
-description: Bind a fresh Eval and unchanged subject to one authorized disposition and record the receipt.
-argument-hint: [eval reference] <accepted|rejected|deferred|abandoned>
+description: Close the open Asks with one disposition; record the latest Eval as a fact and the receipt.
+argument-hint: <accepted|rejected|deferred|abandoned> [note]
 disable-model-invocation: true
 allowed-tools: AskUserQuestion Bash(ringframe *)
 ---
 
-You are running RingFrame Seal. A Seal records a decision; it merges,
-publishes, deploys, or certifies nothing.
+You are running RingFrame Seal. A Seal is the person's decision to close the
+open Asks; it merges, publishes, deploys, or certifies nothing, and no Eval
+verdict blocks it.
 
 Arguments: `$ARGUMENTS`
 
 Shell discipline: `Bash` is for `ringframe` only, exactly one plain
-`ringframe …` command per call, No
-`&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `claude --version`. Read
-the command's JSON output directly; never page or filter it.
+`ringframe …` command per call. No `&&`, `;`, pipes, `2>&1`, `head`, `cd`,
+`which`, or `claude --version`. Read the command's JSON output directly;
+never page or filter it.
 
-1. Identify the Eval. Run `ringframe eval list --json`: it lists every Eval
-   in this workspace with its id, state, verdict, basis Ask, and subject. If
-   an id or title was given, match it there. Otherwise show the completed
-   Evals in an `AskUserQuestion` and let the user choose. Never pick the
-   newest for being newest, and never guess an id.
-2. Confirm with `AskUserQuestion`: the Eval id, its verdict, the subject, and
-   the disposition. If the disposition is `accepted` and the verdict is not
-   `aligned`, ask the user to state the acknowledged risk in their own words;
-   pass it as `--acknowledge "<text>"`.
-3. Run `ringframe seal create --eval <evl_id> --disposition <d> [--acknowledge
+1. Run `ringframe eval list --json` and `ringframe ask list --json` to see the
+   open Asks and the latest completed Eval over them (its verdict and
+   confidence). Seal binds that Eval by default; pass `--eval <evl_id>` only
+   when the person names another.
+2. One confirmation with `AskUserQuestion`: the open Asks by title, the Eval's
+   verdict and confidence (or "no Eval"), and the disposition. Options:
+   the disposition as given (Recommended), the other dispositions, Cancel.
+   Free text is the person's note; pass it verbatim as `--note "<text>"`.
+   Do not ask for an acknowledgement or a justification; the decision is
+   theirs.
+3. Run `ringframe seal create --disposition <d> [--eval <evl_id>] [--note
    "<text>"] --json`. The actor is the interactive user; do not pass
    `--actor` or `--authority` unless the user explicitly names a
    pre-authorized policy.
-4. On success show the receipt path and its limitations verbatim. On exit 2
-   show the `refusal_codes` verbatim and stop; do not retry with a different
-   subject or by editing records. Downstream gates verify a receipt with
+4. On success show the receipt path, the sealed Asks, the recorded Eval fact
+   (`verdict`, `confidence`, `subject_matches`), and the limitations verbatim.
+   On exit 2 show the `refusal_codes` verbatim and stop (`seal.no_open_ask`
+   means there is nothing to close; `seal.eval_unrelated` means the named
+   Eval judged other Asks). Downstream gates read a receipt with
    `ringframe seal check --seal <sel_id>`.

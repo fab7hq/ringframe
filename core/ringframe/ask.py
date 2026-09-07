@@ -154,7 +154,7 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
                      "session_ref": host.get("session_ref"), "workspace": ws.describe(), **provenance,
                      "profile_id": profile["profile_id"], "profile_sha256": profiles.sha256(profile["profile_id"].split("@")[0] if profile["host"] else "unknown")},
             "source": source_ref, "prompt": prompt_ref, "source_verified": verified, "limitations": limitations,
-            "delivery_mode": cap["delivery_mode"], "compiler": compiler}
+            "delivery_mode": cap["delivery_mode"], "compiler": compiler, "base_commit": _head(ws)}
     ev = _event("ask.compiled", ask_id, actor, data, links)
     schema.validate_event(ev)
     assert store.publish(ws, source_ref["path"], source, role="source_intent") == source_ref
@@ -163,6 +163,16 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
     shutil.rmtree(staged)
     return {"ask_id": ask_id, "source": source_ref, "prompt": prompt_ref, "prompt_path": str(ws.rf_dir / prompt_ref["path"]),
             "source_verified": verified, "delivery_mode": data["delivery_mode"]}
+
+
+def _head(ws) -> str | None:
+    """The workspace commit an Ask starts from; Eval's anchor when no Seal precedes it. None outside Git."""
+    import subprocess
+    try:
+        return subprocess.run(["git", "-C", str(ws.root), "rev-parse", "--verify", "--quiet", "HEAD"],
+                              capture_output=True, text=True, check=True).stdout.strip() or None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
 
 def _append(ws, type_, ask_id, data, actor=None):
@@ -339,11 +349,30 @@ def submission_grade(rec) -> str:
     return "observed" if "observed" in states else "attributed" if "attributed" in states else "unobserved"
 
 
-def _summary(ws, ask_id, rec):
+def _sealed(ws) -> set:
+    return {a for e in store.events(ws) if e["type"] == "seal.created" for a in e["data"].get("basis", {}).get("asks", [])}
+
+
+def _state(ws, ask_id, rec, sealed=None) -> str:
+    """open from compile until a Seal names the Ask in its basis; cancelled Asks are never open."""
+    if rec["cancelled"]:
+        return "cancelled"
+    return "sealed" if ask_id in (_sealed(ws) if sealed is None else sealed) else "open"
+
+
+def open_asks(ws) -> list[dict]:
+    """Every open Ask, oldest first: the basis of an Eval and of a Seal."""
+    sealed = _sealed(ws)
+    return [_summary(ws, k, v, sealed) for k, v in _by_id(ws).items() if v["compiled"] and _state(ws, k, v, sealed) == "open"]
+
+
+def _summary(ws, ask_id, rec, sealed=None):
     ev = rec["compiled"]
     d = ev["data"]
     outcome = "cancelled" if rec["cancelled"] else "confirmed" if rec["confirmed"] else "compiled"
-    return {"id": ask_id, "ask_id": ask_id, "title": d["title"], "time": ev["time"], "outcome": outcome,
+    return {"id": ask_id, "ask_id": ask_id, "title": d["title"], "time": ev["time"], "outcome": outcome, "state": _state(ws, ask_id, rec, sealed),
+            "confirmed_at": rec["confirmed"]["time"] if rec["confirmed"] else None, "base_commit": d.get("base_commit"),
+            "links": ev["links"],
             "capability": d["selected_capability"], "session_ref": d["host"].get("session_ref"),
             "source_verified": d["source_verified"], "source": d["source"], "prompt": d["prompt"],
             "prompt_path": str(ws.rf_dir / d["prompt"]["path"]),
@@ -372,7 +401,8 @@ def resolve(ws, session=None, kind="ask", reference=None) -> dict:
 
 def list_asks(ws) -> list[dict]:
     """Every compiled Ask in this workspace, oldest first: what Eval and a person choose from."""
-    return [_summary(ws, ask_id, rec) for ask_id, rec in _by_id(ws).items() if rec["compiled"]]
+    sealed = _sealed(ws)
+    return [_summary(ws, ask_id, rec, sealed) for ask_id, rec in _by_id(ws).items() if rec["compiled"]]
 
 
 def show(ws, ask_id=None, session=None) -> dict:

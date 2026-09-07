@@ -164,13 +164,19 @@ def test_every_skill_carries_the_shell_discipline():
             assert "one plain" in text and "pipes" in text, f"{host}/{name} lacks the one-plain-ringframe-command rule"
 
 
-def test_eval_skills_never_author_attributed_evidence():
+def test_eval_skills_ask_nothing_and_judge_through_sub_agents():
     for host in ("claude", "codex"):
         text = (ROOT / "plugins" / host / "skills" / "eval" / "SKILL.md").read_text()
-        assert "verbatim" in text and "never" in text and "your own" in text.lower(), f"{host}/eval lacks the attributed-evidence rule"
+        assert "ringframe eval open --json" in text and "ringframe eval close --eval" in text, f"{host}/eval must open and close through the CLI"
+        for angle in ("coverage", "drift", "adversary", "intent"):
+            assert f"`{angle}`" in text or f'"{angle}"' in text, f"{host}/eval lacks the {angle} judge"
+        assert "never ask the person anything" in text, f"{host}/eval must ask nothing"
+        assert "ringframe.eval-intent/1" in text and "ringframe.eval-judgement/1" in text
+        assert "AskUserQuestion" not in text and "request_user_input" not in text, f"{host}/eval must not use a chooser"
+        assert "do not run the" in text and "project" in text, f"{host}/eval judges must not run the project's commands"
 
 
-def test_eval_skills_read_the_prompt_through_the_cli():
+def test_seal_skills_never_demand_an_acknowledgement():
     for host in ("claude", "codex"):
-        text = (ROOT / "plugins" / host / "skills" / "eval" / "SKILL.md").read_text()
-        assert "ringframe ask copy --ask" in text and "paste" in text, f"{host}/eval must read prompt.txt via ask copy, never ask for a paste"
+        text = (ROOT / "plugins" / host / "skills" / "seal" / "SKILL.md").read_text()
+        assert "--acknowledge" not in text and "--note" in text and "verdict blocks it" in text, f"{host}/seal must not gate on the verdict"

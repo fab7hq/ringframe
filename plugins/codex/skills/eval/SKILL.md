@@ -1,78 +1,71 @@
 ---
 name: eval
-description: Evaluate one exact subject against a frozen contract derived from an Ask; record an attributed verdict.
+description: Judge the work against every open Ask with independent sub-agents; record a verdict with its confidence. Asks nothing.
 ---
 
-You are running RingFrame Eval inside Codex. Eval is read-only and
-independent; Codex's own review is evidence with a source, never the verdict.
+You are running RingFrame Eval inside Codex. Eval judges the work done so far
+against every open Ask in this workspace and records a verdict with a
+confidence. It asks the person nothing, runs none of the project's commands,
+and gates nothing: the person decides what to do with the result.
 
 Shell discipline: the shell is for `ringframe` only, exactly one plain
-`ringframe …` command per call, plus `git rev-parse HEAD` for the subject. No
-`&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or `codex --version`. Read
-the command's JSON output directly; never page or filter it.
+`ringframe …` command per call. No `&&`, `;`, pipes, `2>&1`, `head`, `cd`,
+`which`, or `codex --version`. Read the command's JSON output directly; never
+page or filter it. Judges read files with the file-reading tool and the
+repository with `git` read commands (`git diff`, `git show`, `git log`);
+nobody edits.
 
-1. Resolve the Ask. `ringframe ask list --json` shows every Ask (id, title,
-   outcome); then `ringframe ask show --json --ask "<id or title>"` for the
-   one the person means. When several Asks could be meant (exit 3, or the
-   person named none and more than one exists), present them through
-   `request_user_input` (one option per Ask, label = title) and let the
-   person choose. Never pick the newest because it is newest, and never ask
-   the person to re-invoke the skill instead of choosing.
-2. Read the Ask's prompt with `ringframe ask copy --ask <ask_id>` (it prints
-   `prompt.txt`; never ask the person to paste it and never read it through
-   the shell). Then run `ringframe eval scaffold --subject-ref <HEAD sha>
-   --title "<Ask title>" --ask <ask_id> --json`: a draft built from facts (the
-   project's test command as `command` evidence, changed paths as
-   `scope.allowed_paths`, `artifact` checks `deps_unchanged` and
-   `scope_clean`). Refine it into the definition as JSON:
-   - `schema`: `ringframe.eval-definition/1`
-   - `requirements`: one per concrete obligation in the prompt, each
-     `{"id","text","required","evidence":[...]}` where evidence is
-     `{"kind":"command","run":[...],"pass_when":{"exit_code":0}}` for checks
-     the repository already trusts (tests, linters, path existence) or
-     `{"kind":"attributed","source":"human:local-user"}` for what only a
-     person can confirm.
-   - evidence kinds, strongest first; use the strongest that can see the
-     property: `command` (give `origin`: `preexisting`, `agent` for tests the
-     change added, `person`/`hidden`), `artifact` (`paths_present`,
-     `deps_unchanged`, `scope_clean`, `marker_present`), `attributed` only for
-     what no command or artifact can see, saying why in `text`.
-   - `scope.allowed_paths`: the paths the Ask allows the change to touch.
-   - `forbidden_effects`: things the prompt said must not happen, same shape.
-   - `freshness`: `{"max_age":"PT24H"}` unless the person says otherwise.
-   - An Eval whose required requirements rest on the person's word alone is
-     `attested`, not `aligned`; the CLI refuses a definition that runs nothing
-     when the project declares tests unless `--attested-only` is recorded.
-   Do not invent requirements the prompt did not state. Show the complete
-   definition through `request_user_input` (`Freeze and run (Recommended)` /
-   `Revise` / `Cancel`). Free text is a revision.
-3. Freeze, then run. Subject: the current commit (`git rev-parse HEAD`, kind
-   `git_commit`) unless the person names a worktree, file set, or artifact.
-   1. Write the definition to `.fab7/rf/tmp/eval-<nonce>.json` (under the
-      workspace root, never under this skill's directory).
-   2. `ringframe eval freeze --ask <ask_id> --subject-kind git_commit
-      --subject-ref <sha> --definition @<file> --json`; keep `eval_id` and
-      `definition.sha256`.
-   3. For each attributed requirement, ask the person through
-      `request_user_input` (options `Pass`, `Fail`, `Indeterminate`; free
-      text allowed) and write exactly
-      `{"requirement":"<id>","source":"human:local-user","scope":"<what they
-      looked at>","time":"<now, ISO 8601>","statement":"<their answer,
-      verbatim>","outcome":"pass|fail|indeterminate","limitations":[]}` to
-      `.fab7/rf/tmp/obs-<nonce>-<id>.json`. One file per requirement.
-   4. `ringframe eval run --eval <eval_id> --definition-sha256 <sha>
-      --observation @<file>... --json`, once. If it reports an error, fix the
-      one thing it names and run again; do not freeze a second definition.
-
-   Attributed evidence is the person's word, not yours. Record their answer
-   verbatim as `statement` and their chosen outcome as `outcome`; if they only
-   picked an option, the statement is that option's label. Never write
-   your own findings into an attributed observation and never decide an attributed
-   outcome yourself. What you noticed while reading the code goes into your
-   report as context, labelled as your review; it is not evidence and does
-   not change the verdict.
-
-4. Report the verdict, each requirement's status, the submission grade in the
-   record's limitations, the `eval_id`, and the record path
-   `.fab7/rf/evals/<eval_id>.json` (the CLI wrote it). Never soften `drifted` or
-   `incomplete`.
+1. Open. Run `ringframe eval open --json`; keep `eval_id`, `brief_path`, and
+   `brief.sha256`. The brief lists the open Asks in order (each with its
+   `prompt_path`), the anchor commit, the subject, the changed files with line
+   counts, and how many unrecorded prompts followed each Ask. Exit 2
+   `eval.no_open_ask`: report "nothing to evaluate: no open Ask" and stop.
+   Exit 3 `eval.anchor_unknown`: report it and stop.
+2. Intent, one sub-agent. Spawn a sub-agent (read-only) with `brief_path` and
+   `brief.sha256`: read the brief and each Ask's `prompt.txt` in order; write
+   the effective intent as numbered items, one obligation each, in the Asks'
+   own words; when a later Ask changes an earlier obligation mark the earlier
+   one `revised` (adding the new text as a new `active` item) or `withdrawn`
+   naming `by_ask_id`; never add an obligation no Ask states; unconfirmed
+   Asks are context, not obligations. It writes
+   `.fab7/rf/tmp/eval-<eval_id>-intent.json` (under the workspace root):
+   `{"schema":"ringframe.eval-intent/1","brief_sha256":"<brief.sha256>",
+   "judge":{"host":"codex","model":"<model id>","angle":"intent","independence":"sub_agent"},
+   "items":[{"id":"i1","text":"...","ask_id":"ask_...","status":"active|revised|withdrawn","by_ask_id":"...","note":"..."}]}`.
+3. Assessors, three sub-agents in parallel, read-only, each with `brief_path`,
+   `brief.sha256`, the intent file path, and one angle. Each reads the brief,
+   the intent, and the change between the anchor and the subject (`git diff
+   <anchor> <subject>`, or `git diff <anchor>` for the worktree, plus the
+   files as they are now) and writes `.fab7/rf/tmp/eval-<eval_id>-<angle>.json`:
+   `{"schema":"ringframe.eval-judgement/1","brief_sha256":"<brief.sha256>",
+   "judge":{"host":"codex","model":"<model id>","angle":"<angle>","independence":"sub_agent"},
+   "votes":[{"item":"i1","vote":"yes|no|unknown","reason":"names the files"}],
+   "drift":[{"path":"<changed path>","finding":"...","classification":"required|consequence|unexplained"}],
+   "basis_notes":[],"commands_run":[]}`. Every `active` item gets exactly one
+   vote; `drift` covers every changed path in the brief. Angles:
+   - `coverage`: is each active item met by the change? `yes` only when you
+     can point at the files; `unknown` when the repository cannot tell you.
+   - `drift`: is each changed path `required` by an item, a reasonable
+     `consequence` of one, or `unexplained` by any Ask? Vote the items too.
+   - `adversary`: assume the work is wrong; for each active item look for the
+     missing case, the wrong behaviour, the untested claim. `no` only when you
+     can point at the failure, else `unknown`; `yes` when you tried and found
+     nothing.
+   If this Codex has no sub-agent tool, run the four passes yourself, one
+   after another, each from a fresh reading of the files, and set
+   `"independence":"shared_context"` in every file; the record will say so.
+   Sub-agents do not write the ledger, do not edit files, and do not run the
+   project's build or tests.
+4. Close. `ringframe eval close --eval <eval_id> --intent @<intent file>
+   --judgement @<coverage file> --judgement @<drift file> --judgement
+   @<adversary file> --json`, once. On an error, fix the one thing it names by
+   having that sub-agent correct its file, then run it again.
+5. Report: one line with `verdict` and `confidence`; the item table (text,
+   majority, agreement, votes); the drift table (`omission` items,
+   `commission` paths with agreement beside the unrecorded-prompt count that
+   may explain them); `delta` since the previous Eval when present; the
+   `eval_id` and record path `.fab7/rf/evals/<eval_id>/record.json`. Never
+   soften `drifted` or `incomplete`, never present the verdict as certain, and
+   never ask the person anything. Fixing is native work or a new `$rf:ask`,
+   then `$rf:eval` again; `$rf:seal` closes the work whenever the person
+   decides.

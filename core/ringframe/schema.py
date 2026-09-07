@@ -18,7 +18,7 @@ ENUMS = {
     "data.state": {"native_accepted", "handoff_ready", "delivery_failed", "unavailable"},
     "data.submission": {"unobserved", "not_applicable"},
     "submission.state": {"observed", "attributed"},
-    "data.verdict": {"aligned", "attested", "drifted", "incomplete"},
+    "data.verdict": {"aligned", "drifted", "incomplete"},
     "data.disposition": {"accepted", "rejected", "deferred", "abandoned"},
 }
 ASK_COMMON = ["title", "classification", "selected_capability", "route_explanation", "host", "source", "prompt", "source_verified", "limitations"]
@@ -28,9 +28,10 @@ REQUIRED = {
     "ask.cancelled": ["cancellation"],
     "ask.submission": ["state", "observed_by", "attributed_by", "as_modified", "host", "prompt_sha256"],
     "ask.delivery": ["mode", "mechanism", "state", "qualification", "receipt", "submission", "limitations"],
-    "eval.completed": ["subject", "definition_sha256", "verdict", "counts", "forbidden_effects_observed", "artifact", "limitations"],
-    "seal.created": ["eval_id", "subject", "disposition", "authority", "freshness", "artifact"],
-    "seal.refused": ["eval_id", "subject", "disposition", "authority", "freshness", "refusal_codes"],
+    "eval.opened": ["brief", "basis", "anchor", "subject"],
+    "eval.completed": ["basis", "subject", "verdict", "confidence", "artifact", "limitations"],
+    "seal.created": ["basis", "eval", "subject", "disposition", "authority", "artifact"],
+    "seal.refused": ["basis", "eval", "subject", "disposition", "authority", "refusal_codes"],
 }
 REF_KEYS = {"role", "path", "bytes", "sha256"}
 
@@ -116,8 +117,12 @@ def validate_event(ev: dict) -> None:
             _enum(f"data.{k}", f"data.{k}", data[k])
         if "id" not in data["qualification"]:
             _fail("data.qualification.id")
+    elif ev["type"] == "eval.opened":
+        _ref("data.brief", data["brief"])
     elif ev["type"] == "eval.completed":
         _enum("data.verdict", "data.verdict", data["verdict"])
+        if not isinstance(data["confidence"], (int, float)) or not 0 <= data["confidence"] <= 1:
+            _fail("data.confidence", "must be a number in [0, 1]")
         _ref("data.artifact", data["artifact"])
     else:
         _enum("data.disposition", "data.disposition", data["disposition"])

@@ -1,123 +1,98 @@
 # RingFrame Eval
 
-Eval independently evaluates one exact subject against a definition frozen
-before any outcome-dependent evidence is collected. It is read-only. The
-harness's own self-review is evidence with a source, never the verdict.
+Eval judges the work done so far against every open Ask in the workspace and
+records a verdict with its confidence. Facts are recorded exactly by the CLI;
+the verdict is a judgement by independent sub-agents of the eval skill. Eval
+asks the person nothing, runs none of the project's commands, knows nothing
+about the project's stack, and gates nothing.
 
 ~~~text
-/rf:eval [ask reference] [subject]
-
-$rf:eval [ask reference] [subject]        (planned)
+/rf:eval
+$rf:eval
 ~~~
 
-# Subject
+# Basis
 
-One immutable, digestible thing:
+Every open Ask, in confirmation order. An Ask is open from `ask.compiled`
+until a Seal names it in its basis; cancelled Asks are never open. Later Asks
+may revise or withdraw obligations of earlier ones; the *effective intent*
+after those revisions is judged, never declared by the CLI. Plain prompts are
+never stored; the brief counts how many unrecorded prompts followed each Ask
+so that changes no Ask explains can be labelled honestly.
+
+# Anchor and subject
+
+The anchor is the commit the work is measured from: the subject of the last
+Seal in the workspace, else the commit recorded when the earliest open Ask
+was compiled (`ask.compiled` records `base_commit`), else `--anchor`. The
+subject is `HEAD` when the tree is clean, else the worktree.
 
 | kind | reference | digest |
 | --- | --- | --- |
 | `git_commit` | commit id | tree hash of the commit |
 | `worktree` | absolute root | SHA-256 over sorted path, mode, and content digest of tracked and untracked non-ignored files |
-| `file_set` | comma-separated globs | SHA-256 over sorted path and content digests |
-| `artifact` | file path | SHA-256 of the file |
 
-The digest is taken before evidence collection and again after. A change
-between the two makes the verdict `incomplete` regardless of evidence.
+# Brief
 
-# Definition
+`ringframe eval open` writes `evals/<eval_id>/brief.json`
+(`ringframe.eval-brief/1`): the open Asks with their prompt paths and
+unrecorded-prompt counts, the anchor, the subject with its digest, the changed
+files with line counts, the previous Evals over the same Asks, and
+limitations. The brief names no command, runner, manifest, or framework.
 
-A JSON document, frozen with `ringframe eval freeze` before anything runs:
+# Judgement
 
-~~~json
-{
-  "schema": "ringframe.eval-definition/1",
-  "requirements": [
-    { "id": "R1", "text": "tests pass", "required": true,
-      "evidence": [ { "kind": "command", "run": ["uv", "run", "pytest"], "pass_when": { "exit_code": 0 } } ] },
-    { "id": "R2", "text": "a person agrees the behaviour matches", "required": true,
-      "evidence": [ { "kind": "attributed", "source": "human:local-user" } ] }
-  ],
-  "forbidden_effects": [
-    { "id": "F1", "text": "no ledger tracked by Git",
-      "evidence": [ { "kind": "command", "run": ["sh", "-c", "test -z \"$(git ls-files .fab7)\""], "pass_when": { "exit_code": 0 } } ] }
-  ],
-  "freshness": { "max_age": "PT24H" }
-}
-~~~
+The eval skill spawns one *intent* sub-agent that turns the Asks into numbered
+items (`active`, `revised`, `withdrawn`, each traced to its Ask), then three
+read-only *assessor* sub-agents with distinct angles (`coverage`, `drift`,
+`adversary`). Each assessor votes `yes | no | unknown` per active item with a
+reason and classifies every changed path as `required`, `consequence`, or
+`unexplained`. Their files (`ringframe.eval-intent/1`,
+`ringframe.eval-judgement/1`) name the host, the model when known, the angle,
+and `independence: sub_agent | shared_context`.
 
-`command` evidence is run by the CLI in the subject root; commands are
-caller-chosen and RingFrame does not judge them. `attributed` evidence is
-supplied, not produced: an observation document naming `requirement`,
-`source`, `scope`, `time`, `statement`, `outcome`, and `limitations`. The
-native harness's review enters only this way, with a `native-review:` source.
+`ringframe eval close` validates them (at least three judgements bound to the
+brief's digest, one vote per active item) and aggregates:
 
-Freezing writes `evals/<eval_id>.definition.json` and returns the id and
-digest. `eval run` refuses a definition whose bytes changed.
+- per item: majority vote and agreement (share of judges in the majority);
+- per path: majority classification and agreement; paths no judge mentioned
+  are listed as `unmentioned`;
+- `verdict`: `aligned` when every active item has a `yes` majority and no
+  path an `unexplained` majority; `drifted` when any item has a `no` majority
+  or any path an `unexplained` majority; otherwise `incomplete` (ties,
+  unknowns, no active item, or a subject that changed between open and close);
+- `confidence`: the lowest agreement among the deciding questions;
+- `drift.omission`: items without a `yes` majority; `drift.commission`: paths
+  with an `unexplained` majority.
 
-# Verdict
-
-Each requirement is `covered-pass`, `covered-fail`, `uncovered`, or
-`indeterminate` (a command that timed out or could not start). The verdict is
-computed, never judged:
-
-- `aligned`: every required requirement and every forbidden-effect check is
-  `covered-pass`, and the subject digest is unchanged;
-- `drifted`: any required requirement or forbidden-effect check is
-  `covered-fail`;
-- `incomplete`: anything else, including a subject that changed during the run.
-
-Missing evidence never becomes success.
+Disagreement is reported, never averaged away. No verdict is presented as
+certain.
 
 # Record
 
-`evals/<eval_id>.json` holds the basis (Ask id and prompt digest, or an
-explicit contract), the definition reference and digest, the subject with
-both digests, every requirement with its evidence and status, the verdict,
-freshness, and limitations. The ledger gets one `eval.completed` line with an
-`evaluates` link to the Ask when there is one.
+`evals/<eval_id>/record.json` (`ringframe.eval/1`) holds the basis, the
+subject with its digest at open and at close, the brief, intent, and judgement
+references with digests, the verdict and confidence, the item table with every
+vote, the drift tables, `follows` (the previous Eval over the same Asks) with
+a `delta` of what closed and opened, and limitations. The ledger gets
+`eval.opened` and `eval.completed` lines with `evaluates` links to each Ask
+and a `supersedes` link to the previous Eval.
 
 # Command line
 
 ~~~text
-ringframe eval freeze --ask <ask_id> | --contract <file> --subject-kind <kind> --subject-ref <ref> --definition @<file> --json
-ringframe eval run --eval <eval_id> [--definition-sha256 <hex>] [--observation @<file>]... --json
+ringframe eval open [--anchor <commit>] [--subject-kind git_commit|worktree --subject-ref <ref>] --json
+ringframe eval close --eval <eval_id> --intent @<file> --judgement @<file> --judgement @<file> --judgement @<file> [--judgement @<file>]... --json
+ringframe eval list --json
 ~~~
 
-# Planned
+Refusals (exit 2): `eval.no_open_ask`, `eval.no_git`, `eval.anchor_missing`,
+`eval.too_few_judges`, `eval.brief_mismatch`, `eval.intent`,
+`eval.judgement`, `eval.missing`, `ledger.immutable`. Exit 3
+`eval.anchor_unknown` when no Seal and no Ask provide an anchor.
 
-Model graders, calibration and disagreement handling, and comparison against
-an untreated native baseline inside Eval wait until a frozen comparison shows
-the Ask treatment beats the untreated prompt on the same task and stratum.
+# What Eval refuses to do
 
-
-## Listing
-
-`ringframe eval list --json` enumerates every Eval in the workspace (frozen or
-completed) with id, state, verdict, basis Ask, subject, and record path. Seal
-chooses from this list; nothing else enumerates Evals.
-
-
-## Attributed evidence is the person's word
-
-An `attributed` observation carries the person's statement verbatim and the
-outcome they chose. The skill never authors an attributed observation from its
-own review; its review is context in the report, not evidence.
-
-
-## Evidence classes and drift (ADR-0009)
-
-Evidence is layered, strongest first: `command` (with the test's `origin`),
-`artifact` (facts the CLI computes from the subject), `trajectory` (hook
-facts), `judge` (calibrated, binary), `attributed` (the person's verbatim
-word). Each requirement records its strongest passing class; the record's
-`evidence_floor` is the weakest of those across required requirements. An Eval
-whose required requirements rest on `attributed` evidence alone is `attested`,
-never `aligned`; Seal treats `attested` like `incomplete`. `eval freeze`
-refuses a definition that runs nothing when the project declares a test
-command unless `--attested-only` is passed and recorded. A test written by the
-change under test (`origin: agent`) counts only beside an artifact or
-trajectory fact. Every record carries `drift`: commission (changed lines
-outside `scope.allowed_paths`, with the files), omission (required
-requirements not met), and process (hook-observed order facts; not collected
-yet). `ringframe eval scaffold` drafts a definition from facts so the skill
-starts from commands and artifacts, not prose.
+Run, detect, or name any project command; store plain-prompt text; ask the
+person anything; author intent items the Asks do not state; present a verdict
+without its confidence; block a Seal.
