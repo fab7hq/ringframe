@@ -18,7 +18,7 @@ ENUMS = {
     "data.state": {"native_accepted", "handoff_ready", "delivery_failed", "unavailable"},
     "data.submission": {"unobserved", "not_applicable"},
     "submission.state": {"observed", "attributed"},
-    "data.verdict": {"aligned", "drifted", "incomplete"},
+    "data.verdict": {"aligned", "attested", "drifted", "incomplete"},
     "data.disposition": {"accepted", "rejected", "deferred", "abandoned"},
 }
 ASK_COMMON = ["title", "classification", "selected_capability", "route_explanation", "host", "source", "prompt", "source_verified", "limitations"]

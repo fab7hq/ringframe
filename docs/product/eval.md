@@ -102,3 +102,22 @@ chooses from this list; nothing else enumerates Evals.
 An `attributed` observation carries the person's statement verbatim and the
 outcome they chose. The skill never authors an attributed observation from its
 own review; its review is context in the report, not evidence.
+
+
+## Evidence classes and drift (ADR-0009)
+
+Evidence is layered, strongest first: `command` (with the test's `origin`),
+`artifact` (facts the CLI computes from the subject), `trajectory` (hook
+facts), `judge` (calibrated, binary), `attributed` (the person's verbatim
+word). Each requirement records its strongest passing class; the record's
+`evidence_floor` is the weakest of those across required requirements. An Eval
+whose required requirements rest on `attributed` evidence alone is `attested`,
+never `aligned`; Seal treats `attested` like `incomplete`. `eval freeze`
+refuses a definition that runs nothing when the project declares a test
+command unless `--attested-only` is passed and recorded. A test written by the
+change under test (`origin: agent`) counts only beside an artifact or
+trajectory fact. Every record carries `drift`: commission (changed lines
+outside `scope.allowed_paths`, with the files), omission (required
+requirements not met), and process (hook-observed order facts; not collected
+yet). `ringframe eval scaffold` drafts a definition from facts so the skill
+starts from commands and artifacts, not prose.

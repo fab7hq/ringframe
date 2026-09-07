@@ -25,10 +25,15 @@ Exit 3 means several candidates: present them with `AskUserQuestion` and ask
 the user to choose, or to supply an explicit contract file instead. Never pick
 the newest because it is newest.
 
-## 2. Draft the definition
+## 2. Draft the definition, facts first
 
 Read the Ask's prompt with `ringframe ask copy --ask <ask_id>` (it prints
-`prompt.txt`; never ask the user to paste it). Draft a JSON definition from it:
+`prompt.txt`; never ask the user to paste it). Then run `ringframe eval
+scaffold --subject-ref <HEAD sha> --title "<Ask title>" --ask <ask_id> --json`:
+it returns a draft built from facts (the project's test command as `command`
+evidence, the commit's changed paths as `scope.allowed_paths`, `artifact`
+checks `deps_unchanged` and `scope_clean`). Start from that draft and refine
+it into a JSON definition:
 
 - `schema`: `ringframe.eval-definition/1`
 - `requirements`: one per concrete obligation in the prompt, each `{id, text,
@@ -37,8 +42,21 @@ Read the Ask's prompt with `ringframe ask copy --ask <ask_id>` (it prints
   (tests, linters, path existence, digest equality) or
   `{"kind":"attributed","source":"human:local-user"}` for what only a person
   can confirm.
+- evidence kinds, strongest first, and you use the strongest that can see the
+  property: `command` (runs; give `origin`: `preexisting` for tests that
+  existed before the change, `agent` for tests the change itself added,
+  `person`/`hidden` for tests the user supplies), `artifact` (facts the CLI
+  computes: `paths_present`, `deps_unchanged`, `scope_clean`,
+  `marker_present`), `attributed` (the person's word) only for what no
+  command or artifact can see, and say why in `text`.
+- `scope.allowed_paths`: the paths the Ask allows the change to touch; the CLI
+  measures commission drift against it.
 - `forbidden_effects`: things the prompt said must not happen, same shape.
 - `freshness`: `{"max_age": "PT24H"}` unless the user says otherwise.
+- An Eval whose required requirements rest on the person's word alone is
+  `attested`, not `aligned`; the CLI refuses to freeze a definition that runs
+  nothing when the project declares tests (`--attested-only` records the
+  exception).
 
 Do not invent requirements the prompt did not state. Show the complete
 definition in an `AskUserQuestion` (`Freeze and run` / `Revise` / `Cancel`).

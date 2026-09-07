@@ -20,7 +20,11 @@ the command's JSON output directly; never page or filter it.
    the person to re-invoke the skill instead of choosing.
 2. Read the Ask's prompt with `ringframe ask copy --ask <ask_id>` (it prints
    `prompt.txt`; never ask the person to paste it and never read it through
-   the shell). Draft the definition from it as JSON:
+   the shell). Then run `ringframe eval scaffold --subject-ref <HEAD sha>
+   --title "<Ask title>" --ask <ask_id> --json`: a draft built from facts (the
+   project's test command as `command` evidence, changed paths as
+   `scope.allowed_paths`, `artifact` checks `deps_unchanged` and
+   `scope_clean`). Refine it into the definition as JSON:
    - `schema`: `ringframe.eval-definition/1`
    - `requirements`: one per concrete obligation in the prompt, each
      `{"id","text","required","evidence":[...]}` where evidence is
@@ -28,8 +32,17 @@ the command's JSON output directly; never page or filter it.
      the repository already trusts (tests, linters, path existence) or
      `{"kind":"attributed","source":"human:local-user"}` for what only a
      person can confirm.
+   - evidence kinds, strongest first; use the strongest that can see the
+     property: `command` (give `origin`: `preexisting`, `agent` for tests the
+     change added, `person`/`hidden`), `artifact` (`paths_present`,
+     `deps_unchanged`, `scope_clean`, `marker_present`), `attributed` only for
+     what no command or artifact can see, saying why in `text`.
+   - `scope.allowed_paths`: the paths the Ask allows the change to touch.
    - `forbidden_effects`: things the prompt said must not happen, same shape.
    - `freshness`: `{"max_age":"PT24H"}` unless the person says otherwise.
+   - An Eval whose required requirements rest on the person's word alone is
+     `attested`, not `aligned`; the CLI refuses a definition that runs nothing
+     when the project declares tests unless `--attested-only` is recorded.
    Do not invent requirements the prompt did not state. Show the complete
    definition through `request_user_input` (`Freeze and run (Recommended)` /
    `Revise` / `Cancel`). Free text is a revision.

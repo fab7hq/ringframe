@@ -84,3 +84,16 @@ def test_verdict_conflict_requires_acknowledgement(repo):
     r = seal.create(ws, rec["eval_id"], "accepted", acknowledge=["shipping without human review"])
     assert r["eval"]["verdict"] == "incomplete" and r["acknowledged"] == ["shipping without human review"]
     assert seal.create(ws, rec["eval_id"], "rejected")["disposition"] == "rejected"  # no ack needed
+
+
+def test_attested_eval_needs_acknowledgement_to_be_accepted(repo):
+    from tests.test_eval import ws_for, head, definition, obs
+    ws = ws_for(repo)
+    d = definition(requirements=[{"id": "R1", "text": "human agrees", "required": True, "evidence": [{"kind": "attributed", "source": "human:local-user"}]}], forbidden_effects=[])
+    f = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=head(repo), definition=d)
+    assert evaluate.run(ws, f["eval_id"], observations=[obs("R1")])["verdict"] == "attested"
+    with pytest.raises(seal.Refused) as e:
+        seal.create(ws, f["eval_id"], "accepted")
+    assert "seal.verdict_conflict" in e.value.codes
+    receipt = seal.create(ws, f["eval_id"], "accepted", acknowledge=["attested only; I reviewed it myself"])
+    assert receipt["eval"]["verdict"] == "attested"

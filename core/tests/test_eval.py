@@ -136,3 +136,84 @@ def test_eval_list_enumerates_records_newest_last(repo):
     assert [r["eval_id"] for r in listed] == [a["eval_id"], b["eval_id"]]
     assert listed[0]["verdict"] == "aligned" and listed[0]["subject"]["ref"] == head(repo) and listed[0]["state"] == "completed"
     assert listed[1]["verdict"] is None and listed[1]["state"] == "frozen"  # frozen, not yet run
+
+
+def commit(repo, files: dict, message="change"):
+    for name, text in files.items():
+        p = repo / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message], check=True)
+    return head(repo)
+
+
+def obs(req, outcome="pass", statement="Pass"):
+    return {"requirement": req, "source": "human:local-user", "scope": "s", "time": "2026-01-01T00:00:00Z", "statement": statement, "outcome": outcome, "limitations": []}
+
+
+def test_attestation_only_is_attested_not_aligned(repo):
+    ws = ws_for(repo)
+    d = definition(requirements=[{"id": "R1", "text": "human agrees", "required": True, "evidence": [{"kind": "attributed", "source": "human:local-user"}]}], forbidden_effects=[])
+    f = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=head(repo), definition=d)
+    rec = evaluate.run(ws, f["eval_id"], observations=[obs("R1")])
+    assert rec["verdict"] == "attested" and rec["evidence_floor"] == "E5" and rec["requirements"][0]["strongest"] == "E5"
+    assert any("attested" in l for l in rec["limitations"])
+
+
+def test_freeze_refuses_attestation_only_when_the_project_declares_tests(repo):
+    ws = ws_for(repo)
+    commit(repo, {"package.json": json.dumps({"name": "x", "scripts": {"test": "node --test"}})})
+    d = definition(requirements=[{"id": "R1", "text": "human agrees", "required": True, "evidence": [{"kind": "attributed", "source": "human:local-user"}]}], forbidden_effects=[])
+    with pytest.raises(LedgerError, match="eval.no_command_evidence"):
+        evaluate.freeze(ws, subject_kind="git_commit", subject_ref=head(repo), definition=d)
+    f = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=head(repo), definition=d, attested_only=True)
+    frozen = json.loads((ws.rf_dir / f"evals/{f['eval_id']}.definition.json").read_text())
+    assert frozen["attested_only"] is True and frozen["scope"]["test_command"] == ["npm", "test"]
+
+
+def test_agent_written_test_alone_is_indeterminate(repo):
+    ws = ws_for(repo)
+    sha = commit(repo, {"tests/a.test.sh": "exit 0\n", "src/a.txt": "x\n"})
+    d = definition(requirements=[{"id": "R1", "text": "feature", "required": True, "evidence": [{"kind": "command", "run": ["sh", "tests/a.test.sh"], "origin": "agent"}]}], forbidden_effects=[])
+    f = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=sha, definition=d)
+    rec = evaluate.run(ws, f["eval_id"])
+    assert rec["requirements"][0]["status"] == "indeterminate" and rec["verdict"] == "incomplete"
+    assert any("written by the change" in l for l in rec["limitations"])
+    # with an artifact fact that the test is part of the change, the agent-written test counts
+    d2 = definition(requirements=[{"id": "R1", "text": "feature", "required": True, "evidence": [
+        {"kind": "command", "run": ["sh", "tests/a.test.sh"], "origin": "agent"}, {"kind": "artifact", "check": "paths_present", "paths": ["tests/a.test.sh", "src/a.txt"]}]}], forbidden_effects=[])
+    f2 = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=sha, definition=d2)
+    rec2 = evaluate.run(ws, f2["eval_id"])
+    assert rec2["requirements"][0]["status"] == "covered-pass" and rec2["evidence_floor"] == "E1" and rec2["verdict"] == "aligned"
+
+
+def test_artifact_checks_and_drift_from_the_commit(repo):
+    ws = ws_for(repo)
+    commit(repo, {"package.json": json.dumps({"name": "x", "dependencies": {"a": "1"}}), "src/server.js": "base\n"}, "base")
+    sha = commit(repo, {"src/server.js": "base\nfeature\n", "tests/server.test.js": "t\n", "docs/notes.md": "unrelated\n", "package.json": json.dumps({"name": "x", "dependencies": {"a": "1", "b": "2"}})}, "feature")
+    d = definition(
+        scope={"allowed_paths": ["src/", "tests/"]},
+        requirements=[{"id": "R1", "text": "feature implemented", "required": True, "evidence": [{"kind": "artifact", "check": "paths_present", "paths": ["tests/server.test.js"]}]}],
+        forbidden_effects=[{"id": "F1", "text": "no new dependency", "evidence": [{"kind": "artifact", "check": "deps_unchanged"}]},
+                           {"id": "F2", "text": "no change outside scope", "evidence": [{"kind": "artifact", "check": "scope_clean", "max_unbound_lines": 0}]}])
+    f = evaluate.freeze(ws, subject_kind="git_commit", subject_ref=sha, definition=d)
+    rec = evaluate.run(ws, f["eval_id"])
+    assert rec["verdict"] == "drifted"
+    assert {x["id"]: x["status"] for x in rec["forbidden_effects"]} == {"F1": "covered-fail", "F2": "covered-fail"}
+    assert rec["drift"]["commission"]["unbound_files"] == ["docs/notes.md", "package.json"] and rec["drift"]["commission"]["unbound_lines"] == 3  # docs (1 line) and package.json (1 removed + 1 added), both outside src/ and tests/
+    assert rec["drift"]["omission"] == {"rate": 0.0, "unmet": []} and rec["drift"]["process"] == {}
+    assert rec["requirements"][0]["strongest"] == "E2" and rec["evidence_floor"] == "E2"
+
+
+def test_scaffold_drafts_facts_first(repo):
+    ws = ws_for(repo)
+    commit(repo, {"package.json": json.dumps({"name": "x", "scripts": {"test": "node --test tests/"}}), "tests/a.test.js": "t\n"}, "base")
+    sha = commit(repo, {"src/f.js": "f\n"}, "feature")
+    d = evaluate.scaffold(ws, subject_ref=sha, title="Add feature", ask_id=None)
+    assert d["schema"] == "ringframe.eval-definition/1" and d["scope"]["test_command"] == ["npm", "test"]
+    kinds = [e["kind"] for r in d["requirements"] for e in r["evidence"]]
+    assert kinds[0] == "command" and d["requirements"][0]["evidence"][0]["origin"] == "preexisting"
+    assert {f["evidence"][0]["check"] for f in d["forbidden_effects"]} == {"deps_unchanged", "scope_clean"}
+    assert d["scope"]["allowed_paths"] == ["src/"]  # from the commit's changed paths, for the person to widen or narrow
+    evaluate.validate_definition(d)

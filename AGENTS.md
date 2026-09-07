@@ -21,7 +21,7 @@ uv build                           # wheel + sdist into dist/
 
 ~~~text
 core/ringframe/     package: ids, digest, workspace, store, schema, profiles, sessions, ask, evaluate, seal, cli
-core/ringframe/profiles/   host capability profiles (JSON)
+core/ringframe/profiles/   host capability profiles (YAML); deltas/ holds the host and practice catalogs
 core/tests/         pytest
 plugins/claude/     the `rf` Claude Code plugin: skills/, hooks/
 .claude-plugin/     marketplace manifest pointing at plugins/claude
