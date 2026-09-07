@@ -27,8 +27,8 @@ the newest because it is newest.
 
 ## 2. Draft the definition
 
-From the Ask's `prompt.txt` (open it at the printed `prompt_path`), draft a
-JSON definition:
+Read the Ask's prompt with `ringframe ask copy --ask <ask_id>` (it prints
+`prompt.txt`; never ask the user to paste it). Draft a JSON definition from it:
 
 - `schema`: `ringframe.eval-definition/1`
 - `requirements`: one per concrete obligation in the prompt, each `{id, text,

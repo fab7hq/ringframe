@@ -168,3 +168,9 @@ def test_eval_skills_never_author_attributed_evidence():
     for host in ("claude", "codex"):
         text = (ROOT / "plugins" / host / "skills" / "eval" / "SKILL.md").read_text()
         assert "verbatim" in text and "never" in text and "your own" in text.lower(), f"{host}/eval lacks the attributed-evidence rule"
+
+
+def test_eval_skills_read_the_prompt_through_the_cli():
+    for host in ("claude", "codex"):
+        text = (ROOT / "plugins" / host / "skills" / "eval" / "SKILL.md").read_text()
+        assert "ringframe ask copy --ask" in text and "paste" in text, f"{host}/eval must read prompt.txt via ask copy, never ask for a paste"

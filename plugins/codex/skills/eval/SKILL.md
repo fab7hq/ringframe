@@ -18,8 +18,9 @@ the command's JSON output directly; never page or filter it.
    `request_user_input` (one option per Ask, label = title) and let the
    person choose. Never pick the newest because it is newest, and never ask
    the person to re-invoke the skill instead of choosing.
-2. Draft the definition from the Ask's `prompt.txt` (open it at the printed
-   `prompt_path`) as JSON:
+2. Read the Ask's prompt with `ringframe ask copy --ask <ask_id>` (it prints
+   `prompt.txt`; never ask the person to paste it and never read it through
+   the shell). Draft the definition from it as JSON:
    - `schema`: `ringframe.eval-definition/1`
    - `requirements`: one per concrete obligation in the prompt, each
      `{"id","text","required","evidence":[...]}` where evidence is
