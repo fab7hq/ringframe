@@ -58,12 +58,16 @@ offer one.
    classification from section 4. The CLI selects the directives that apply
    to this Ask (`host.entries`, `practice.entries`); you never choose, drop,
    or add rules.
-2. Write the prompt as one brief for this task, the way a senior engineer
-   briefs a peer: start from the exact source intent, name the artifacts,
-   paths, and constraints it names, and apply each supplied directive to this
-   task's specifics. Do not list the directives, restate them generically, or
-   name principles; add nothing beyond the intent and the supplied directives.
-   Do not add a command prefix: the CLI adds it.
+2. Write the prompt in two parts. First, one brief for this task, the way a
+   senior engineer briefs a peer: start from the exact source intent and name
+   the artifacts, paths, and constraints it names; add nothing else. Then a
+   line `Rules:` followed by one line per supplied directive you apply:
+   `- <label>: <that directive applied to this task's specifics>`, using the
+   `label` values the CLI returned (several labels may share one line when
+   one sentence applies them together). Every label must come from the
+   supplied set; the CLI refuses unknown labels and records which supplied
+   directives you applied or omitted. Do not restate a directive generically
+   or explain a principle. Do not add a command prefix: the CLI adds it.
 
 ## 3. Persist the candidate, then confirm natively
 

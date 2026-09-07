@@ -2,7 +2,7 @@
 schema: ringframe.deltas/1
 scope: practice
 domain: software-development
-render: {style: paragraph-per-task, explain: never, principle_names: never, core_cap: 5}
+render: {style: labelled-rules, heading: 'Rules:', explain: never, core_cap: 5}
 source: https://lawsofsoftwareengineering.com/
 concerns: [api_surface, auth, data_migration, concurrency, performance, refactor, dependency_change, ui, cli, tests_only, operate]
 # tier: core | situational | reference (default situational); concerns from the domain vocabulary
@@ -10,6 +10,7 @@ entries:
   # ================= design philosophies
   - id: practice.kiss
     principle: KISS
+    label: KISS
     applies_to: {task: [implement, plan]}
     tier: core
     text: >-
@@ -21,6 +22,7 @@ entries:
       guessing at future needs.
   - id: practice.yagni
     principle: YAGNI
+    label: YAGNI
     applies_to: {task: [implement, plan]}
     tier: core
     text: >-
@@ -29,6 +31,7 @@ entries:
       and remove code that no current path uses.
   - id: practice.dry
     principle: DRY
+    label: DRY
     applies_to: {task: [implement]}
     concerns: [refactor]
     text: >-
@@ -37,6 +40,7 @@ entries:
       duplication rather than invent an abstraction that does not yet fit.
   - id: practice.solid
     principle: SOLID
+    label: SOLID
     applies_to: {task: [implement]}
     concerns: [refactor, api_surface]
     text: >-
@@ -48,6 +52,7 @@ entries:
       concrete details.
   - id: practice.demeter
     principle: Law of Demeter
+    label: Demeter
     applies_to: {task: [implement]}
     concerns: [refactor]
     text: >-
@@ -55,6 +60,7 @@ entries:
       operate on another's internals.
   - id: practice.least_astonishment
     principle: Principle of Least Astonishment
+    label: Least Astonishment
     applies_to: {task: [implement, document]}
     text: >-
       Make names, signatures, defaults, and behaviour match what a reader of
@@ -64,6 +70,7 @@ entries:
   # ================= architecture laws
   - id: practice.gall
     principle: Gall's Law
+    label: Gall
     applies_to: {task: [plan, implement]}
     tier: core
     text: >-
@@ -71,6 +78,7 @@ entries:
       never design the complete system before a simple one runs.
   - id: practice.hyrum
     principle: Hyrum's Law
+    label: Hyrum
     applies_to: {task: [implement]}
     tier: situational
     concerns: [api_surface, refactor]
@@ -80,6 +88,7 @@ entries:
       change when you do.
   - id: practice.leaky_abstractions
     principle: Law of Leaky Abstractions and Tesler's Law
+    label: Leaky Abstractions
     applies_to: {task: [implement, plan]}
     concerns: [refactor]
     text: >-
@@ -88,6 +97,7 @@ entries:
       pretend it has gone.
   - id: practice.second_system
     principle: Second-System Effect
+    label: Second System
     applies_to: {task: [plan]}
     concerns: [refactor]
     text: >-
@@ -96,6 +106,7 @@ entries:
       version lacked.
   - id: practice.unintended_consequences
     principle: Law of Unintended Consequences
+    label: Unintended Consequences
     applies_to: {task: [implement, operate]}
     concerns: [data_migration, concurrency, operate]
     text: >-
@@ -105,6 +116,7 @@ entries:
   # ================= planning laws
   - id: practice.knuth
     principle: Premature Optimization
+    label: Knuth
     applies_to: {task: [plan, implement]}
     tier: situational
     concerns: [performance]
@@ -113,6 +125,7 @@ entries:
       bottleneck only.
   - id: practice.ninety_ninety
     principle: Ninety-Ninety Rule and Hofstadter's Law
+    label: Ninety-Ninety
     applies_to: {task: [plan]}
     tier: core
     text: >-
@@ -121,6 +134,7 @@ entries:
       rather than hidden inside a large item.
   - id: practice.goodhart
     principle: Goodhart's Law
+    label: Goodhart
     applies_to: {task: [plan, review]}
     text: >-
       Define done by the requirement being met, not by a proxy such as
@@ -128,6 +142,7 @@ entries:
       requirement describes.
   - id: practice.pareto
     principle: Pareto Principle
+    label: Pareto
     applies_to: {task: [plan]}
     tier: core
     text: >-
@@ -135,6 +150,7 @@ entries:
       end-to-end path through the riskiest part first.
   - id: practice.brooks
     principle: Brooks's Law and Amdahl's Law
+    label: Brooks
     applies_to: {task: [plan, implement]}
     requires: {host_capability: subagents}
     text: >-
@@ -145,6 +161,7 @@ entries:
   # ================= quality laws
   - id: practice.boy_scout
     principle: Boy Scout Rule and Broken Windows
+    label: Boy Scout
     applies_to: {task: [implement]}
     tier: core
     text: >-
@@ -152,6 +169,7 @@ entries:
       what the requirement touches, record them instead of fixing them.
   - id: practice.testing_pyramid
     principle: Testing Pyramid
+    label: Testing Pyramid
     applies_to: {task: [implement]}
     tier: core
     text: >-
@@ -161,18 +179,21 @@ entries:
       only where a unit test cannot see the behaviour.
   - id: practice.pesticide
     principle: Pesticide Paradox
+    label: Pesticide Paradox
     applies_to: {task: [diagnose, implement]}
     text: >-
       When a fault escaped the existing tests, add the test that would have
       caught it rather than re-running the ones that did not.
   - id: practice.kernighan
     principle: Kernighan's Law
+    label: Kernighan
     applies_to: {task: [implement, review]}
     text: >-
       Write code plain enough to debug at half your cleverness; when a clever
       construct saves lines but costs clarity, choose clarity.
   - id: practice.linus
     principle: Linus's Law
+    label: Linus
     applies_to: {task: [review]}
     text: >-
       Review as an independent reader: judge the change against the
@@ -180,6 +201,7 @@ entries:
       the concrete way it fails, ordered by severity.
   - id: practice.postel
     principle: Postel's Law
+    label: Postel
     applies_to: {task: [implement]}
     tier: situational
     concerns: [api_surface, auth]
@@ -188,6 +210,7 @@ entries:
       boundary, without silently accepting what the contract forbids.
   - id: practice.murphy
     principle: Murphy's Law
+    label: Murphy
     applies_to: {task: [operate, implement]}
     text: >-
       Assume every step can fail; verify the current state before changing it
@@ -196,6 +219,7 @@ entries:
   # ================= decision laws
   - id: practice.occam
     principle: Occam's Razor and First Principles
+    label: Occam
     applies_to: {task: [diagnose, research]}
     text: >-
       Reproduce the fault first and reduce it to the smallest case; prefer the
@@ -203,6 +227,7 @@ entries:
       system actually does, not from what it is supposed to do.
   - id: practice.confirmation_bias
     principle: Confirmation Bias and Dunning-Kruger
+    label: Confirmation Bias
     applies_to: {task: [research, question, review, diagnose]}
     text: >-
       Look for the evidence that would prove you wrong before concluding; keep
@@ -210,6 +235,7 @@ entries:
       confidence.
   - id: practice.map_territory
     principle: The Map Is Not the Territory
+    label: Map Is Not Territory
     applies_to: {task: [diagnose, implement]}
     concerns: [dependency_change]
     text: >-
@@ -218,12 +244,14 @@ entries:
       relying on it.
   - id: practice.sunk_cost
     principle: Sunk Cost Fallacy
+    label: Sunk Cost
     applies_to: {task: [implement, plan]}
     text: >-
       When an approach is not working, abandon it regardless of the effort
       already spent, and say so.
   - id: practice.lindy
     principle: Lindy Effect
+    label: Lindy
     applies_to: {task: [research, plan]}
     concerns: [dependency_change]
     text: >-
@@ -233,6 +261,7 @@ entries:
   # ================= cross-cutting (owner practice; to be evaluated)
   - id: practice.assumptions
     principle: owner practice
+    label: Assumptions
     applies_to: {task: [plan, implement, diagnose]}
     text: >-
       Where the requirement is silent, write the assumption you are making in

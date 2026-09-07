@@ -49,13 +49,17 @@ effects). Codex capabilities in this profile:
    selects the directives that apply to this Ask (`host.entries`,
    `practice.entries`); you never choose, drop, or add rules.
 2. Write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
-   `.fab7/rf/tmp/stage-<nonce>/composed.txt`: one brief for this task, the
-   way a senior engineer briefs a peer: start from the exact intent, name the
-   artifacts, paths, and constraints it names, and apply each supplied
-   directive to this task's specifics. Do not list the directives, restate
-   them generically, or name principles; add nothing beyond the intent and
-   the supplied directives. Do not add the `/plan ` or `/goal ` prefix: the
-   CLI adds it and records which directives it supplied.
+   `.fab7/rf/tmp/stage-<nonce>/composed.txt` in two parts. First, one brief
+   for this task, the way a senior engineer briefs a peer: start from the
+   exact intent and name the artifacts, paths, and constraints it names; add
+   nothing else. Then a line `Rules:` followed by one line per supplied
+   directive you apply: `- <label>: <that directive applied to this task's
+   specifics>`, using the `label` values the CLI returned (several labels may
+   share one line when one sentence applies them together). Every label must
+   come from the supplied set; the CLI refuses unknown labels and records
+   which supplied directives you applied or omitted. Do not restate a
+   directive generically or explain a principle. Do not add the `/plan ` or
+   `/goal ` prefix: the CLI adds it.
 3. Only after both files exist, run one command:
    `ringframe ask compile --staged <dir> --title "<short title>"
    --capability <id> --classification '<json>' --route '<json>' --host

@@ -93,6 +93,13 @@ def _render_prompt(ws, profile, cap, capability, classification, text_in: bytes,
         text += rendered["text"].rstrip("\n") + "\n"
     provenance = {"source": form, "host": {k: v for k, v in rendered["host"].items() if k not in ("text", "entries")},
                   "practice": {k: v for k, v in rendered["practice"].items() if k not in ("text", "entries")}}
+    if form == "composed":
+        supplied = rendered["host"]["entries"] + rendered["practice"]["entries"]
+        try:
+            applied, omitted = deltas.audit_composed(text_in.decode("utf-8"), supplied)
+        except config.ConfigError as e:
+            raise LedgerError("ask.composed_rules", str(e)) from None
+        provenance.update(applied=applied, omitted=omitted)
     return text.encode("utf-8"), provenance
 
 

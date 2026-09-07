@@ -5,8 +5,8 @@ The CLI selects; the model composes (default); the CLI can also render
 
 | Staged file | Who phrases the directives | `compiler.source` |
 | --- | --- | --- |
-| `composed.txt` (default) | the skill, after `ringframe deltas render --json` returned the selected directives, writes one task-specific brief that applies them; the CLI adds the prefix only | `composed` |
-| `body.txt` (baseline) | the CLI appends the directives verbatim after the body | `body` |
+| `composed.txt` (default) | the skill, after `ringframe deltas render --json` returned the selected directives (`id`, `label`, `text`), writes the task brief followed by `Rules:` and one `- <labels>: <directive applied to this task>` line per applied directive; the CLI adds the prefix, audits every label against the supplied set, and records `applied` and `omitted` | `composed` |
+| `body.txt` (baseline) | the CLI appends `Rules:` with one `- <label>: <directive>` line per selected entry, verbatim | `body` |
 | `prompt.txt` (legacy) | the model wrote everything | `prompt` |
 
 In every form the CLI adds the capability prefix, enforces the length limit,
@@ -23,7 +23,8 @@ Two catalogs, all YAML:
 | practice deltas | `core/ringframe/deltas/practice/software-development.yaml`, overridden by `~/.fab7/rf/deltas.yaml` then `<workspace>/.fab7/rf/deltas.yaml` | classification `task`, `result`, `effects`, `concerns` | `attributed` and `qualified` entries |
 
 Practice entries are semantic directives organised by software-engineering
-law; the rendered text never names or explains a principle. Selection is
+law; each carries a short `label` (KISS, Hyrum, Boy Scout) that appears only
+as the traceability tag of its `Rules:` line, never as an explanation. Selection is
 tiered: `core` entries render on task match (capped, `render.core_cap`),
 `situational` entries only when a classified concern matches, `reference`
 entries never. Overrides replace fields by entry id (`text`, `enabled`,

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from ringframe import ask, sessions, store, workspace
+from ringframe import ask, sessions, store, workspace, ids
 from ringframe.ask import NeedsInput
 from ringframe.store import LedgerError
 
@@ -328,7 +328,7 @@ def test_compile_renders_prompt_from_body_and_records_compiler_provenance(repo, 
     out = compile_(ws, staged=d, title="Checkout goal", capability="native_goal", host={"name": "codex", "surface": "native-tui"}, classification=cls)
     text = ask.prompt_text(ws, out["ask_id"])
     assert text.startswith("/goal Run plans/checkout-perf, every item in order.\n")  # host prefix + body, the CLI added the prefix
-    assert "measure first" in text and "KISS" not in text and "Knuth" not in text  # performance concern selected the directive, never the name
+    assert "\nRules:\n" in text and "- Knuth: Do not optimize on suspicion; measure first" in text  # labelled directive, selected by the performance concern
     ev = [e for e in store.events(ws) if e["type"] == "ask.compiled"][-1]
     comp = ev["data"]["compiler"]
     assert comp["source"] == "body" and comp["host"]["deltas"] == [] and "practice.knuth" in comp["practice"]["selected"]
@@ -355,11 +355,42 @@ def test_compile_composed_prompt_records_the_cli_selection_not_the_models_claim(
     d = ws.rf_dir / "tmp" / "stage-composed"
     d.mkdir(parents=True)
     (d / "source.txt").write_bytes(b"add the health endpoint\n")
-    (d / "composed.txt").write_bytes(b"Add GET /health returning uptime. Reuse the existing bearer check; keep every current endpoint's behaviour unchanged.\n")
+    (d / "composed.txt").write_bytes(b"Add GET /health returning uptime. Reuse the existing bearer check.\n\nRules:\n- Hyrum: keep every current endpoint's behaviour unchanged.\n- KISS, YAGNI: return only uptime; no options.\n")
     cls = {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]}
     out = compile_(ws, staged=d, title="Health", capability="native_plan", host={"name": "codex", "surface": "native-tui"}, classification=cls)
     text = ask.prompt_text(ws, out["ask_id"])
-    assert text == "/plan Add GET /health returning uptime. Reuse the existing bearer check; keep every current endpoint's behaviour unchanged.\n"  # prefix added, nothing appended
+    assert text.startswith("/plan Add GET /health returning uptime. Reuse the existing bearer check.\n") and text.rstrip("\n").endswith("no options.")  # prefix added, nothing appended
     comp = [e for e in store.events(ws) if e["type"] == "ask.compiled"][-1]["data"]["compiler"]
     assert comp["source"] == "composed" and "practice.hyrum" in comp["practice"]["selected"] and "practice.kiss" in comp["practice"]["selected"]
     assert comp["practice"]["matched_concerns"] == ["api_surface"] and comp["host"]["deltas"] == []
+
+
+def _composed_stage(ws, rules: str):
+    d = ws.rf_dir / "tmp" / f"stage-{ids.new_id('x')[-6:]}"
+    d.mkdir(parents=True)
+    (d / "source.txt").write_bytes(b"add the health endpoint\n")
+    (d / "composed.txt").write_bytes(("Add GET /health/details returning uptime and version behind the existing bearer check.\n\nRules:\n" + rules).encode())
+    return d
+
+
+def test_composed_rules_are_audited_against_the_supplied_directives(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    ws = workspace.resolve(cwd=repo).ensure()
+    cls = {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]}
+    host = {"name": "codex", "version": "codex-cli 0.153.4", "surface": "native-tui", "session_ref": "cx"}
+    good = _composed_stage(ws, "- KISS, YAGNI: Expose only uptime and version; no new options or abstractions.\n- Hyrum: Keep every existing endpoint's observable behaviour unchanged.\n")
+    out = compile_(ws, staged=good, title="Health", capability="native_plan", host=host, classification=cls)
+    comp = [e for e in store.events(ws) if e["type"] == "ask.compiled"][-1]["data"]["compiler"]
+    assert comp["source"] == "composed"
+    assert set(comp["applied"]) == {"practice.kiss", "practice.yagni", "practice.hyrum"}
+    assert set(comp["omitted"]) == set(comp["practice"]["selected"]) - set(comp["applied"]) and "practice.testing_pyramid" in comp["omitted"]
+    assert ask.prompt_text(ws, out["ask_id"]).startswith("/plan Add GET")
+    bad = _composed_stage(ws, "- KISS: Keep it small.\n- Telepathy: Read the user's mind.\n")
+    with pytest.raises(LedgerError, match="ask.composed_rules"):
+        compile_(ws, staged=bad, title="Health", capability="native_plan", host=host, classification=cls)
+    norules = ws.rf_dir / "tmp" / "stage-norules"
+    norules.mkdir()
+    (norules / "source.txt").write_bytes(b"add the health endpoint\n")
+    (norules / "composed.txt").write_bytes(b"Add GET /health/details.\n")
+    with pytest.raises(LedgerError, match="ask.composed_rules"):
+        compile_(ws, staged=norules, title="Health", capability="native_plan", host=host, classification=cls)

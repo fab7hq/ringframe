@@ -13,7 +13,7 @@ def test_shipped_catalogs_validate_and_have_provenance():
         for e in cat["entries"]:
             assert e["id"].startswith(f"{name}.{e['capability']}.") and e["matrix_ref"] and e["status"] in deltas.HOST_STATUS
     prac = deltas.load_practice_catalog("software-development")
-    assert prac["scope"] == "practice" and prac["render"]["principle_names"] == "never"
+    assert prac["scope"] == "practice" and prac["render"]["style"] == "labelled-rules" and prac["render"]["explain"] == "never"
     ids = [e["id"] for e in prac["entries"]]
     assert len(ids) == len(set(ids)) and all(e["principle"] and e["text"].strip() for e in prac["entries"])
     for e in prac["entries"]:
@@ -44,7 +44,7 @@ def test_practice_selection_is_faceted_tiered_and_budgeted(repo, monkeypatch, tm
     assert {"practice.hyrum", "practice.postel"} <= set(with_api["practice"]["selected"])
     assert with_api["practice"]["matched_concerns"] == ["api_surface", "auth"]
     assert "\n" not in with_api["practice"]["text"].strip() or True  # one paragraph
-    assert "KISS" not in with_api["text"] and "Hyrum" not in with_api["text"]
+    assert "- KISS: " in with_api["text"] and "- Hyrum: " in with_api["text"]  # labels as traceability tags, directives applied
     planning = deltas.render(ws, prof, "native_plan", {**IMPL, "task": ["plan"], "result": "plan", "effects": ["read"]})
     assert "practice.testing_pyramid" not in planning["practice"]["selected"] and "practice.gall" in planning["practice"]["selected"]
     with pytest.raises(config.ConfigError, match="concern"):
@@ -68,3 +68,16 @@ def test_user_and_workspace_layers_override_by_id(repo, monkeypatch, tmp_path):
     assert layers == [("user", True), ("workspace", True)]
     listing = deltas.effective(ws, "software-development")
     assert listing["practice.kiss"]["layer"] == "user" and listing["practice.yagni"]["enabled"] is False and listing["practice.gall"]["layer"] == "shipped"
+
+
+def test_render_is_a_labelled_rules_list_and_entries_carry_labels(repo, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    ws = workspace.resolve(cwd=repo).ensure()
+    r = deltas.render(ws, profiles.load("codex"), "native_plan", {**IMPL, "concerns": ["api_surface"]})
+    lines = r["practice"]["text"].splitlines()
+    assert lines[0] == "Rules:" and all(l.startswith("- ") and ": " in l for l in lines[1:])
+    labels = {e["label"] for e in r["practice"]["entries"]}
+    assert {"KISS", "Hyrum"} <= labels and all(e["label"] for e in r["practice"]["entries"])
+    assert any(l.startswith("- KISS: ") for l in lines) and any(l.startswith("- Hyrum: ") for l in lines)
+    for name in deltas.host_catalog_names():
+        assert all(e.get("label") for e in deltas.load_host_catalog(name)["entries"])
