@@ -93,6 +93,10 @@ is a revision: compile again with `--link revises:<ask_id>` and ask again.
   with the intent under normal permissions.
 - Cancel: `ringframe ask cancel --ask <ask_id> --reason "<why>" --json`, then
   stop.
+- No answer (the chooser was dismissed, timed out, or returned nothing):
+  `ringframe ask cancel --ask <ask_id> --reason "chooser dismissed" --json`,
+  tell the person the Ask was cancelled, and stop. Never continue with the
+  intent, plan, or hand off without a recorded answer.
 
 Submission stays unobserved unless the RingFrame prompt hook sees the exact
 bytes or the person runs `ringframe ask submitted --ask <ask_id>`.

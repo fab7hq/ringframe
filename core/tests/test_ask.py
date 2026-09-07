@@ -280,3 +280,37 @@ def test_confirmation_surface_comes_from_the_profile_or_is_unknown(repo):
     out2 = compile_(ws, staged=stage(ws, prompt=b"/plan Fix.\n"), title="second", host={"name": "codex", "surface": "native-tui"}, capability="native_plan",
                     classification={**CLS, "task": ["implement"], "result": "workspace_change", "effects": ["write"]})
     assert ask.confirm(ws, out2["ask_id"])["confirmation"]["surface"] == "request_user_input"
+
+
+def _codex_plan(ws, title, prompt):
+    # each Ask comes from its own hook-identified Codex session (the hook, not the model, knows the session)
+    sessions.capture(ws, "codex", {"session_id": f"s-{title}", "prompt": "$rf:ask fix the login bug"}, host_version="codex-cli 0.153.4")
+    return compile_(ws, staged=stage(ws, prompt=prompt), title=title, host={"name": "codex", "version": "codex-cli 0.153.4", "surface": "native-tui", "session_ref": f"s-{title}"}, capability="native_plan",
+                    classification={**CLS, "task": ["implement"], "result": "workspace_change", "effects": ["write"]})
+
+
+def test_submission_matches_when_the_host_strips_its_slash_command_prefix(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = _codex_plan(ws, "one", b"/plan Fix the login bug.\n")
+    # Codex hands the UserPromptSubmit hook the text after "/plan ", without the file's trailing newline
+    rec = sessions.capture(ws, "codex", {"session_id": "s-one", "prompt": "Fix the login bug."})
+    sub = ask.submission_from_capture(ws, "codex", "s-one", rec["sha256"])
+    assert sub["ask_id"] == out["ask_id"] and sub["match"] == "host_prefix_stripped"
+    assert ask.show(ws, ask_id=out["ask_id"])["submission"] == "observed"
+
+
+def test_ambiguous_submission_prefers_the_delivered_ask_and_otherwise_records_nothing(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    first = _codex_plan(ws, "one", b"/plan Fix the login bug.\n")
+    second = _codex_plan(ws, "two", b"/plan Fix the login bug.\n")
+    ask.confirm(ws, second["ask_id"])
+    ask.delivery_handoff(ws, second["ask_id"])
+    rec = sessions.capture(ws, "codex", {"session_id": "s-two", "prompt": "Fix the login bug."})
+    sub = ask.submission_from_capture(ws, "codex", "s-two", rec["sha256"])
+    assert sub["ask_id"] == second["ask_id"]  # the Ask that was handed off is the one a paste is expected for
+    third = _codex_plan(ws, "three", b"/plan Fix the login bug.\n")
+    ask.confirm(ws, first["ask_id"]); ask.delivery_handoff(ws, first["ask_id"])
+    ask.confirm(ws, third["ask_id"]); ask.delivery_handoff(ws, third["ask_id"])
+    rec2 = sessions.capture(ws, "codex", {"session_id": "s-three", "prompt": "Fix the login bug."})
+    assert ask.submission_from_capture(ws, "codex", "s-three", rec2["sha256"]) is None  # two delivered candidates: no attribution
+    assert store.verify(ws) == []

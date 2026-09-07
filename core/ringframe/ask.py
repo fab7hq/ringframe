@@ -170,23 +170,42 @@ def submitted(ws, ask_id: str, as_modified=False, actor=None) -> dict:
 def submission_from_capture(ws, host: str, session: str, sha256: str) -> dict | None:
     """A later user prompt whose bytes equal one compiled prompt.txt: host-observed submission.
 
-    Composers drop a file's trailing newline on paste, so that form matches too (recorded as such).
-    Unique match only, once per Ask."""
+    Three byte forms count as the same prompt, each recorded by name: the file itself (`exact`), the file
+    without its trailing newline (`trailing_newline_dropped`: composers drop it on paste), and the file
+    without the capability's slash-command prefix (`host_prefix_stripped`: Codex hands its hooks the text
+    after `/plan `). When several Asks match, only those already handed off are candidates; a remaining tie
+    records nothing rather than guessing. Once per Ask."""
     hits = []
     for ask_id, v in _by_id(ws).items():
         if not v["compiled"] or any(s["data"]["state"] == "observed" for s in v["submissions"]):
             continue
-        ref = v["compiled"]["data"]["prompt"]
-        if ref["sha256"] == sha256:
-            hits.append((ask_id, "exact"))
-        elif digest.sha256_bytes((ws.rf_dir / ref["path"]).read_bytes().rstrip(b"\n")) == sha256:
-            hits.append((ask_id, "trailing_newline_dropped"))
+        d = v["compiled"]["data"]
+        match = _prompt_match(ws, d, sha256)
+        if match:
+            hits.append((ask_id, match, v["delivery"] is not None))
+    if len(hits) > 1:
+        hits = [h for h in hits if h[2]]
     if len(hits) != 1:
         return None
-    ask_id, match = hits[0]
+    ask_id, match, _ = hits[0]
     return _append(ws, "ask.submission", ask_id, {"state": "observed", "observed_by": "hook:UserPromptSubmit", "attributed_by": None,
                                                   "as_modified": False, "host": {"name": host, "session_ref": session}, "prompt_sha256": sha256,
                                                   "match": match})
+
+
+def _prompt_match(ws, compiled: dict, sha256: str) -> str | None:
+    ref = compiled["prompt"]
+    if ref["sha256"] == sha256:
+        return "exact"
+    data = (ws.rf_dir / ref["path"]).read_bytes()
+    if digest.sha256_bytes(data.rstrip(b"\n")) == sha256:
+        return "trailing_newline_dropped"
+    prefix = (profiles.capability(profiles.by_id(compiled["host"]["profile_id"]), compiled["selected_capability"]) or {}).get("prompt_prefix")
+    if prefix and data.startswith(prefix.encode()):
+        stripped = data[len(prefix):]
+        if sha256 in (digest.sha256_bytes(stripped), digest.sha256_bytes(stripped.rstrip(b"\n"))):
+            return "host_prefix_stripped"
+    return None
 
 
 def prompt_text(ws, ask_id: str) -> str:

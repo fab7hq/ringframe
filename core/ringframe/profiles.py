@@ -49,5 +49,14 @@ def for_host(host: dict) -> dict:
     return load("unknown")
 
 
+def by_id(profile_id: str) -> dict:
+    """The profile whose profile_id matches, or the unknown profile."""
+    for name in names():
+        p = load(name)
+        if p.get("profile_id") == profile_id:
+            return p
+    return load("unknown")
+
+
 def capability(profile: dict, cap_id: str) -> dict | None:
     return next((c for c in profile["capabilities"] if c["id"] == cap_id), None)

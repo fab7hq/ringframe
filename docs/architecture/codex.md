@@ -29,6 +29,23 @@ $rf:ask <intent>
   Codex: Plan mode or goal under its own permissions
 ~~~
 
+Observed Codex behaviours the adapter accounts for (TUI run card
+`ringframe-ask-codex-tui-q01`, one human run on 0.153.4):
+
+- Codex strips the slash command before `UserPromptSubmit` runs: pasting
+  `/plan <text>` reaches the hook as `<text>`. The submission match therefore
+  also accepts the compiled prompt without its capability prefix and records
+  `match: host_prefix_stripped`.
+- The `request_user_input` chooser can disappear on its own after a while in
+  Default mode. The skill treats a missing answer as a cancel and never
+  proceeds without a recorded answer; RingFrame records nothing for that Ask
+  beyond `ask.compiled` and `ask.cancelled`. What Codex itself does after the
+  dismissal is host behaviour outside RingFrame's control.
+- Invoking `$rf:ask` twice with the same text within 30 minutes makes the
+  session lookup ambiguous; RingFrame then verifies nothing, falls back to the
+  unknown profile, and hands off without the `/plan ` prefix. Use one
+  invocation per intent, or vary the text.
+
 Profile `codex@0.153` (`core/ringframe/profiles/codex.json`) records the
 feature prerequisite, the prompt prefixes, the goal length limit, and that
 `native_direct` with write, execute, or external effects needs an explicit
