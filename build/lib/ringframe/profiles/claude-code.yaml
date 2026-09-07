@@ -53,4 +53,19 @@ capabilities:
   - execute
   - external_effect
   - workspace_write
+- id: native_goal
+  purpose: Claude Code persistent goal, entered by the person with /goal
+  activation: {mechanism: null, tool: null}
+  confirmation: {tool: AskUserQuestion}
+  continuation: the person submits the prompt; Claude Code keeps the objective attached to the session
+  effects: [per source intent]
+  permission_owner: host
+  delivery_mode: human_handoff
+  prompt_prefix: '/goal '
+  receipt: null
+  qualification: {id: null}
+  limitations:
+  - /goal is user-entered in the TUI; no model-callable transition exists
+  - submission is observed only through the host prompt hook
+subagents: true
 fallback: human_handoff

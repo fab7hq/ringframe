@@ -28,8 +28,11 @@ downgrades to `delivery_failed` plus a human handoff that names the prompt
 file and never implies the prompt was submitted.
 
 Qualified host tuple: Claude Code 2.1.263 through the Agent SDK, Sonnet 5 at
-low effort (`ringframe-ask-ledger-q04`: three of three attempts persisted the
-exact intent after native confirmation, entered Plan mode, and recorded the
-hook receipt with a clean ledger). `EnterPlanMode` activation itself was first
+low effort (`ringframe-ask-ledger-q06`, candidate `0cee135`: three of three
+attempts obtained the CLI-selected directives, composed one brief, persisted
+the exact intent before the chooser, confirmed natively with the rendered
+prompt as preview, entered Plan mode, and recorded the hook receipt with a
+clean ledger; `compiler.source = composed` in all three). Predecessors q04 and
+q05 passed on earlier bytes. `EnterPlanMode` activation itself was first
 qualified in `ringframe-ask-plan-q04`. Other host versions degrade to the
 unknown profile and human handoff.
