@@ -45,7 +45,9 @@ context, not obligations. It writes `.fab7/rf/tmp/eval-<eval_id>-intent.json`:
 
 ## 3. Assessors (three sub-agents, in parallel)
 
-Spawn three `Agent`s at once, read-only, each with `brief_path`,
+Spawn three `Agent`s in one message so they run in parallel, in the
+foreground (never `run_in_background`: a background sub-agent cannot obtain
+permissions and is denied everything), read-only, each with `brief_path`,
 `brief.sha256`, the intent file path, and one angle. Each reads the brief,
 the intent, and the change between the anchor and the subject (`git diff
 <anchor> <subject>` or `git diff <anchor>` for the worktree, plus `Read` of
@@ -77,8 +79,11 @@ angles:
   you can point at the failure, else `unknown`; vote `yes` when you tried and
   found nothing.
 
-Sub-agents do not write the ledger, do not edit files, and do not run the
-project's build or tests; what they read is what they judge.
+Tell every sub-agent: read files with `Read` (never `cat`), run exactly one
+plain `git …` command per `Bash` call (no `&&`, `;`, pipes, `mkdir`), write
+only its own file under `.fab7/rf/tmp/`. Sub-agents do not write the ledger,
+do not edit files, and do not run the project's build or tests; what they
+read is what they judge.
 
 ## 4. Close
 
