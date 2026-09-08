@@ -45,9 +45,10 @@ context, not obligations. It writes `.fab7/rf/tmp/eval-<eval_id>-intent.json`:
 
 ## 3. Assessors (three sub-agents, in parallel)
 
-Spawn three `Agent`s in one message so they run in parallel, in the
-foreground (never `run_in_background`: a background sub-agent cannot obtain
-permissions and is denied everything), read-only, each with `brief_path`,
+Issue three `Agent` calls in a single assistant message; they already run
+concurrently. Do not set `run_in_background` on any of them: a background
+sub-agent cannot obtain permissions, every one of its tool calls is denied,
+and it writes nothing. Each is read-only and receives `brief_path`,
 `brief.sha256`, the intent file path, and one angle. Each reads the brief,
 the intent, and the change between the anchor and the subject (`git diff
 <anchor> <subject>` or `git diff <anchor>` for the worktree, plus `Read` of

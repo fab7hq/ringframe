@@ -32,8 +32,9 @@ nobody edits.
    `{"schema":"ringframe.eval-intent/1","brief_sha256":"<brief.sha256>",
    "judge":{"host":"codex","model":"<model id>","angle":"intent","independence":"sub_agent"},
    "items":[{"id":"i1","text":"...","ask_id":"ask_...","status":"active|revised|withdrawn","by_ask_id":"...","note":"..."}]}`.
-3. Assessors, three sub-agents spawned together in the foreground (never in
-   the background: a background sub-agent cannot obtain approvals), read-only,
+3. Assessors, three sub-agents spawned together in one message, never
+   detached or in the background (a background sub-agent cannot obtain
+   approvals, so every one of its tool calls is denied), read-only,
    each told to read files with the file tool, run one plain `git …` command
    per shell call, and write only its own file; each with `brief_path`,
    `brief.sha256`, the intent file path, and one angle. Each reads the brief,
