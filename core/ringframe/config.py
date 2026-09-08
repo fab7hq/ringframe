@@ -1,4 +1,4 @@
-"""Authored configuration is YAML; evidence is canonical JSON (ADR-0008 §7).
+"""Authored configuration is YAML; evidence is canonical JSON.
 
 Identities of configuration documents are digests of the parsed document's canonical JSON,
 so comments and formatting never change a profile or catalog identity."""

@@ -1,8 +1,8 @@
-# RingFrame host profile: claude-code@2.1 (authored configuration; identity = sha256 of canonical JSON)
+# RingFrame host profile: claude-code (authored configuration; identity = sha256 of canonical JSON)
 schema: ringframe.profile/1
-profile_id: claude-code@2.1
+profile_id: claude-code
 host: claude-code
-version_range: '>=2.1.260 <2.2'
+version_range: null
 surface: native-tui
 invocation_prefix: '/rf:'
 capabilities:
@@ -23,6 +23,7 @@ capabilities:
     captured_by: hook:PostToolUse
     tool: EnterPlanMode
   qualification:
+    # Historical evidence identifiers; records are not distributed with this package.
     id: ringframe-ask-plan-q04
     stratum: agent-sdk
     tui: ringframe-ask-confirm-tui-q02 (feasibility only)

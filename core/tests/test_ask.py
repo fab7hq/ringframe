@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from ringframe import ask, sessions, store, workspace, ids
+from ringframe import ask, sessions, store, workspace, ids, profiles, seal, evaluate
 from ringframe.ask import NeedsInput
 from ringframe.store import LedgerError
 
@@ -46,7 +46,7 @@ def test_compile_publishes_two_artifacts_and_one_event(repo):
     assert not (ws.rf_dir / "tmp" / "stage-1").exists()
     ev, = store.events(ws)
     assert ev["type"] == "ask.compiled" and ev["id"] == out["ask_id"]
-    assert ev["data"]["host"]["profile_id"] == "claude-code@2.1" and ev["data"]["host"]["workspace"]["rule"] == "git_toplevel"
+    assert ev["data"]["host"]["profile_id"] == "claude-code" and ev["data"]["host"]["workspace"]["rule"] == "git_toplevel"
     assert store.verify(ws) == []
     assert ask.show(ws)["outcome"] == "compiled" and ask.show(ws)["submission"] == "unobserved"
 
@@ -55,7 +55,7 @@ def test_confirm_and_cancel_are_appended_graded_events(repo):
     ws = workspace.resolve(cwd=repo).ensure()
     out = compile_(ws)
     rec = ask.confirm(ws, out["ask_id"])
-    assert rec["confirmation"] == {"observed_by": "skill", "surface": None}  # no capture -> unknown profile -> no surface claimed
+    assert rec["confirmation"] == {"observed_by": "skill", "surface": None}  # Claude profile has no top-level confirmation surface
     with pytest.raises(LedgerError, match="ask.already_confirmed"):
         ask.confirm(ws, out["ask_id"])
     later = ask.cancel(ws, out["ask_id"], reason="changed my mind", attributed=True)
@@ -68,8 +68,8 @@ def test_confirm_and_cancel_are_appended_graded_events(repo):
 
 def test_submission_observed_from_capture_and_attributed_by_human(repo):
     ws = workspace.resolve(cwd=repo).ensure()
-    out = compile_(ws, host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
-    other = compile_(ws, staged=stage(ws, prompt=b"Something else.\n"), title="Other", host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
+    out = compile_(ws, host={"name": "codex", "surface": "native-tui"}, capability="native_direct")
+    other = compile_(ws, staged=stage(ws, prompt=b"Something else.\n"), title="Other", host={"name": "codex", "surface": "native-tui"}, capability="native_direct")
     # the person pastes the exact prompt; the hook captures its digest
     rec = sessions.capture(ws, "codex", {"session_id": "c1", "prompt": "Fix the login bug.\n"})
     sub = ask.submission_from_capture(ws, "codex", "c1", rec["sha256"])
@@ -81,7 +81,7 @@ def test_submission_observed_from_capture_and_attributed_by_human(repo):
     sub2 = ask.submission_from_capture(ws, "codex", "c1", pasted["sha256"])
     assert sub2["ask_id"] == other["ask_id"] and sub2["match"] == "trailing_newline_dropped"
     assert ask.show(ws, ask_id=other["ask_id"])["submission"] == "observed"
-    third = compile_(ws, staged=stage(ws, prompt=b"Third.\n"), title="Third", host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
+    third = compile_(ws, staged=stage(ws, prompt=b"Third.\n"), title="Third", host={"name": "codex", "surface": "native-tui"}, capability="native_direct")
     assert ask.submission_from_capture(ws, "codex", "c1", "f" * 64) is None  # no match
     assert ask.show(ws, ask_id=out["ask_id"])["submission"] == "observed"
     att = ask.submitted(ws, third["ask_id"], as_modified=True)
@@ -103,7 +103,7 @@ def test_confirm_resolves_session_and_version_from_capture(repo):
     host = store.events(ws)[0]["data"]["host"]
     assert host["session_ref"] == "hook-session" and host["session_ref_source"] == "capture"
     assert host["version"] == "2.1.263 (Claude Code)" and host["version_source"] == "capture"
-    assert host["profile_id"] == "claude-code@2.1"
+    assert host["profile_id"] == "claude-code"
     assert ask.delivery_from_hook(ws, hook(session="hook-session"))["state"] == "native_accepted"
 
 
@@ -272,8 +272,8 @@ def test_non_human_actor_needs_authorization_to_compile_or_confirm(repo):
 
 def test_confirmation_surface_comes_from_the_profile_or_is_unknown(repo):
     ws = workspace.resolve(cwd=repo).ensure()
-    # unknown host profile: the CLI must not invent a Claude Code surface for a Codex session
-    out = compile_(ws, host={"name": "codex", "surface": "native-tui"}, capability="human_handoff")
+    # An unknown host must not acquire a native confirmation surface.
+    out = compile_(ws, host={"name": "unknown-host", "surface": "native-tui"}, capability="human_handoff")
     rec = ask.confirm(ws, out["ask_id"])
     assert rec["confirmation"]["surface"] is None
     sessions.capture(ws, "codex", {"session_id": "cx", "prompt": "$rf:ask fix the login bug"}, host_version="codex-cli 0.153.4")
@@ -433,3 +433,44 @@ def test_compile_outside_git_records_no_base_commit(tmp_path):
     ws = workspace.resolve(explicit=tmp_path).ensure()
     compile_(ws)
     assert store.events(ws)[0]["data"]["base_commit"] is None
+
+
+@pytest.mark.parametrize("version", ["codex-cli 1.0.0", "development", None])
+def test_compile_keeps_observed_version_and_profile_digest(repo, version):
+    ws = workspace.resolve(cwd=repo).ensure()
+    sessions.capture(ws, "codex", {"session_id": "new", "prompt": "$rf:ask fix the login bug"}, host_version=version)
+    out = compile_(ws, staged=stage(ws, prompt=b"/plan Fix.\n"), host={"name": "codex"})
+    recorded = store.events(ws)[0]["data"]["host"]
+    assert recorded["version"] == version
+    assert recorded["profile_id"] == "codex"
+    assert recorded["profile_sha256"] == profiles.sha256("codex")
+    assert out["source_verified"] == "exact"
+    assert ask.confirm(ws, out["ask_id"])["confirmation"]["surface"] == "request_user_input"
+
+
+def test_old_profile_id_does_not_break_submission_review_or_seal(repo, monkeypatch):
+    ws = workspace.resolve(cwd=repo).ensure()
+    original_load = profiles.load
+
+    def old_load(name):
+        p = original_load(name)
+        if name == "codex":
+            p.update(profile_id="codex@0.153", version_range=">=0.153.0 <0.154")
+        return p
+
+    with monkeypatch.context() as patch:
+        patch.setattr(profiles, "load", old_load)
+        out = _codex_plan(ws, "old", b"/plan Fix the login bug.\n")
+    before = (ws.rf_dir / "ledger.jsonl").read_bytes()
+    assert ask.show(ws, ask_id=out["ask_id"])["outcome"] == "compiled"
+    ask.confirm(ws, out["ask_id"])
+    ask.delivery_handoff(ws, out["ask_id"])
+    captured = sessions.capture(ws, "codex", {"session_id": "s-old", "prompt": "Fix the login bug."})
+    sub = ask.submission_from_capture(ws, "codex", "s-old", captured["sha256"])
+    assert sub["match"] == "host_prefix_stripped"
+    opened = evaluate.open_eval(ws)
+    assert opened["eval_id"]
+    receipt = seal.create(ws, "deferred")
+    assert seal.check(ws, receipt["seal_id"])["fresh"]
+    assert (ws.rf_dir / "ledger.jsonl").read_bytes().startswith(before)
+    assert store.verify(ws) == []

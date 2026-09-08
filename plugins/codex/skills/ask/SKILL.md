@@ -7,11 +7,14 @@ You are running RingFrame Ask inside Codex. RingFrame understands Codex's
 native capabilities; Codex understands the project; the person supplies and
 approves the intent, and on Codex the person also submits the prompt.
 
-Prerequisites the person must have done: `uv tool install ringframe`, and
-`codex features enable default_mode_request_user_input` so that the native
-`request_user_input` tool is available outside Plan mode. If
-`request_user_input` is not available to you, stop and tell the person to
-enable that feature; do not confirm through ordinary chat.
+Requires the `ringframe` CLI on PATH and the native `request_user_input`
+tool available in this turn. If the tool is unavailable, stop before compiling
+and explain that native confirmation is required. On hosts exposing
+`default_mode_request_user_input`, the person can enable it with
+`codex features enable default_mode_request_user_input`; otherwise use a host
+mode that exposes the tool. Do not change host settings or confirm through
+ordinary chat. If the host rejects the confirmation call, stop without
+recording confirmation or continuing the work.
 
 The exact source intent is the text after `$rf:ask` in the person's message.
 Treat it as immutable.

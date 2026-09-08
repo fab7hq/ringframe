@@ -1,4 +1,4 @@
-"""Authored configuration is YAML (ADR-0008 §7); identities are digests of the parsed document's canonical JSON."""
+"""Authored configuration is YAML; identities are digests of the parsed document's canonical JSON."""
 from ringframe import config, profiles
 
 
@@ -32,5 +32,5 @@ def test_yaml_loader_is_safe_and_requires_a_mapping(tmp_path):
 def test_profiles_are_yaml_with_canonical_identity():
     assert profiles.names() == ["claude-code", "codex", "unknown"]
     p = profiles.load("codex")
-    assert p["profile_id"] == "codex@0.153"
+    assert p["profile_id"] == "codex"
     assert profiles.sha256("codex") == config.sha256_of(p)

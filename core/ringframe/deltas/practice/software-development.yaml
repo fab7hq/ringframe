@@ -1,4 +1,4 @@
-# RingFrame shipped practice defaults (ADR-0008 §8). Overridable per user (~/.fab7/rf/deltas.yaml) and per workspace (.fab7/rf/deltas.yaml).
+# RingFrame shipped practice defaults. Overridable per user (~/.fab7/rf/deltas.yaml) and per workspace (.fab7/rf/deltas.yaml).
 schema: ringframe.deltas/1
 scope: practice
 domain: software-development

@@ -1,4 +1,4 @@
-"""ADR-0008: deltas are data keyed by (host, capability) or by classification; the CLI renders them."""
+"""Deltas are data keyed by (host, capability) or by classification; the CLI renders them."""
 import pytest
 
 from ringframe import config, deltas, profiles, workspace

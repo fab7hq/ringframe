@@ -2,7 +2,7 @@
 
 ## Work locally
 
-- Run these commands from `ringframe/`:
+- Run these commands from the repository root:
 
   ```sh
   uv sync --locked
@@ -41,8 +41,8 @@
 - Run relevant deterministic tests and `git diff --check` before handoff;
   run the full suite for changes to shared contracts or skill instructions.
 - Do not call a model from unit tests. Before sandboxed LLM testing or host
-  acceptance claims, read and follow the parent Fab7 `LLM_VERIFICATION.md`
-  and HostLab procedure. If unavailable, obtain them before starting that work.
+  acceptance claims, read and follow [LLM verification](docs/verification.md).
+  Keep the authenticated test runner and its evidence outside the source tree.
 - Cite retained qualification IDs and exact tested artifacts for host claims.
   Treat changed plugin bytes as needing fresh qualification; unit tests do
   not prove host or model behavior.

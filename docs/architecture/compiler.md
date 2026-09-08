@@ -43,6 +43,10 @@ ringframe deltas render --host codex --capability native_plan \
 concerns, and budget omissions for rendered forms. Composed input also records
 applied and omitted IDs. Catalog identities hash canonical JSON parsed from YAML.
 
-Shipped host deltas remain candidates and are excluded by default. Candidate
-text and successful composition alone do not establish improvement over the
+The Claude Code and Codex host catalogs each contain three candidate additions
+and are excluded by default. The practice catalog supplies the active default
+Rules. Catalog `matrix_ref` URLs and evidence identifiers are descriptive
+references; the CLI does not fetch them or require a documentation checkout.
+
+Candidate text and successful composition alone do not establish improvement over the
 native prompt baseline. [Eval](../product/eval.md) judges the resulting work.

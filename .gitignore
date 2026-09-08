@@ -9,3 +9,5 @@ dist/
 # This repository is source only. Running RingFrame writes .fab7/rf/ into a
 # consumer worktree, never here.
 /.fab7/
+
+/build/

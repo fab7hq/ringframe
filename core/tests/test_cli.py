@@ -50,7 +50,7 @@ def test_init_and_profile_show(repo, monkeypatch):
     code, out, _ = run(repo, "init", "--json", monkeypatch=monkeypatch)
     assert code == 0 and out["rf_dir"].endswith(".fab7/rf") and (repo / ".fab7/rf/.gitignore").exists()
     code, out, _ = run(repo, "profile", "show", "--host", "claude-code", "--version", "2.1.260", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and out["profile_id"] == "claude-code@2.1" and len(out["sha256"]) == 64
+    assert code == 0 and out["profile_id"] == "claude-code" and len(out["sha256"]) == 64
     code, out, _ = run(repo, "profile", "show", "--host", "cursor", "--json", monkeypatch=monkeypatch)
     assert out["profile_id"] == "unknown"
 
@@ -110,7 +110,7 @@ def test_ask_compile_cancel_submitted_copy_and_usage_errors(repo, monkeypatch):
 
 
 def test_capture_of_a_pasted_prompt_records_observed_submission(repo, monkeypatch):
-    code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "t", "--capability", "human_handoff", "--classification", CLS,
+    code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "t", "--capability", "native_direct", "--classification", CLS,
                        "--route", ROUTE, "--host", json.dumps({"name": "codex", "surface": "native-tui"}), "--json", monkeypatch=monkeypatch)
     assert code == 0
     payload = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "c9", "prompt": "Fix login.\n", "cwd": str(repo)})

@@ -1,4 +1,4 @@
-"""Eval: a judged verdict with confidence over every open Ask (ADR-0009).
+"""Eval: a judged verdict with confidence over every open Ask.
 
 The CLI records facts exactly: the open Asks, the anchor, the subject digest, the changed files, how many
 unrecorded prompts followed each Ask, which judgements were submitted. Sub-agents of the eval skill judge:

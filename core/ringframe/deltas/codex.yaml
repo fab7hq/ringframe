@@ -1,4 +1,4 @@
-# RingFrame host deltas for Codex (ADR-0008). Rendered by the CLI only when `status: qualified`.
+# RingFrame host deltas for Codex. Rendered by the CLI only when `status: qualified`.
 schema: ringframe.deltas/1
 scope: host
 host: codex
@@ -8,7 +8,7 @@ entries:
     capability: native_plan
     text: End the plan with the exact checks the implementer must run; the person reviews and leaves Plan mode themselves.
     why: /plan is user-entered and read-only; there is no model transition out of it.
-    matrix_ref: docs/knowledge-base/harnesses/codex/capability.md#plan-mode
+    matrix_ref: https://github.com/fab7hq/ringframe/blob/main/docs/architecture/codex.md#ask-path
     status: candidate
     evidence: null
   - id: codex.native_goal.item_loop
@@ -16,7 +16,7 @@ entries:
     capability: native_goal
     text: "Work the plan one item at a time, in order. Per item: analyze the current implementation against the item; implement test-first; review the change."
     why: A persistent objective needs an iteration shape; the owner's loop is analyze, TDD, code review. Outcome judgement belongs to rf:eval.
-    matrix_ref: docs/knowledge-base/harnesses/codex/capability.md#persistent-chat-goal
+    matrix_ref: https://github.com/fab7hq/ringframe/blob/main/docs/architecture/codex.md#ask-path
     status: candidate
     evidence: null
   - id: codex.native_goal.terminal_condition
@@ -24,6 +24,6 @@ entries:
     capability: native_goal
     text: Done when every item has been through the loop; then stop and report what remains open.
     why: /goal keeps the objective attached until cleared; without a terminal condition it never ends.
-    matrix_ref: docs/knowledge-base/harnesses/codex/capability.md#persistent-chat-goal
+    matrix_ref: https://github.com/fab7hq/ringframe/blob/main/docs/architecture/codex.md#ask-path
     status: candidate
     evidence: null

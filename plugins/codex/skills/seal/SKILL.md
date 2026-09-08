@@ -7,6 +7,14 @@ You are running RingFrame Seal inside Codex. A Seal is the person's decision
 to close the open Asks; it merges, publishes, deploys, or certifies nothing,
 and no Eval verdict blocks it.
 
+Requires the native `request_user_input` tool in this turn. If it is
+unavailable, stop and explain that native confirmation is required. On hosts
+exposing `default_mode_request_user_input`, the person can enable it with
+`codex features enable default_mode_request_user_input`; otherwise use a host
+mode that exposes the tool. Do not change settings or substitute ordinary chat.
+If the host rejects the tool call, the chooser is cancelled or dismissed, or
+no answer is returned, do not create a Seal.
+
 Shell discipline: the shell is for `ringframe` only, exactly one plain
 `ringframe …` command per call. No `&&`, `;`, pipes, `2>&1`, `head`, `cd`,
 `which`, or `codex --version`. Read the command's JSON output directly; never

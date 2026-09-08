@@ -1,4 +1,4 @@
-"""Seal: the person's decision to close the open Asks. It records the latest Eval as a fact and gates nothing (ADR-0009)."""
+"""Seal: the person's decision to close the open Asks. It records the latest Eval as a fact and gates nothing."""
 
 import json
 import subprocess
@@ -28,7 +28,7 @@ def _parse(t: str) -> datetime:
 
 
 def _authority(ws, actor, disposition, subject_kind) -> tuple[str | None, str | None]:
-    """Interactive humans decide by being present; any other actor needs a pre-authorization record (ADR-0004)."""
+    """Interactive humans decide by being present; any other actor needs a pre-authorization record."""
     if actor["kind"] == "human" and actor.get("authority", "interactive") == "interactive":
         return "interactive", None
     path = ws.rf_dir / "authorizations" / f"{actor['id']}.json"

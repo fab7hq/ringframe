@@ -18,3 +18,5 @@ host evidence is scoped separately in the adapter notes.
 For maintenance, use [AGENTS.md](../AGENTS.md). For data handling and private
 reports, use [SECURITY.md](../SECURITY.md). CLI syntax is available through
 `ringframe --help` and each subcommand's `--help`.
+
+Contributor tests involving models follow [LLM verification](verification.md).

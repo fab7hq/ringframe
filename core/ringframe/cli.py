@@ -173,7 +173,7 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         return 0, {"rf_dir": str(ws.rf_dir), **ws.describe()}
     if ns.cmd == "profile":
         prof = profiles.for_host({"name": ns.host, "version": ns.host_version})
-        name = prof["profile_id"].split("@")[0] if prof["host"] else "unknown"
+        name = prof["host"] or "unknown"
         return 0, {**prof, "sha256": profiles.sha256(name)}
     if ns.cmd == "ask":
         if ns.sub == "compile":

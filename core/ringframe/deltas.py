@@ -1,4 +1,4 @@
-"""Delta catalogs (ADR-0008): host deltas keyed by (host, capability); practice deltas keyed by classification.
+"""Delta catalogs: host deltas keyed by (host, capability); practice deltas keyed by classification.
 
 Authored as YAML, rendered deterministically by the CLI. The model writes the task body; it never chooses or words
 the standing rules. Verification of the work is rf:eval's, so no delta carries a check."""

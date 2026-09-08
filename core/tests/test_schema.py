@@ -13,7 +13,7 @@ def cancelled():
                                                                 "horizon": "session", "effects": ["read"]},
                              "selected_capability": "native_plan", "route_explanation": {"fits": "x", "alternatives": [], "continuation": "c", "effects": "e", "gaps": []},
                              "host": {"name": "claude-code", "version": "2.1.260", "surface": "native-tui", "session_ref": None,
-                                      "workspace": {"root": "/w", "rule": "cwd"}, "profile_id": "claude-code@2.1", "profile_sha256": "b" * 64},
+                                      "workspace": {"root": "/w", "rule": "cwd"}, "profile_id": "claude-code", "profile_sha256": "b" * 64},
                              "source": REF, "prompt": {**REF, "role": "generated_prompt", "path": "asks/ask_1/prompt.txt"},
                              "source_verified": "unverified", "limitations": []}}
 

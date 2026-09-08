@@ -18,17 +18,16 @@ default.
 Requires Python 3.11+, uv, Git, and a POSIX environment (macOS or Linux).
 Install the CLI first, then choose your host plugin.
 
-For the upcoming 0.0.1 release, run this from the RingFrame checkout root:
+After the first PyPI publication, install the latest release:
 
 ```sh
-uv tool install .
+uv tool install ringframe
 ```
 
-After 0.0.1 is published to PyPI:
-
-```sh
-uv tool install ringframe==0.0.1
-```
+Upgrade an existing unpinned installation with `uv tool upgrade ringframe`.
+For a specific version, open its
+[repository release/tag](https://github.com/fab7hq/ringframe/releases)
+and follow that release's version-specific CLI and plugin instructions.
 
 ### Claude Code
 
@@ -40,13 +39,16 @@ claude plugin install rf@ringframe
 ### Codex
 
 ```sh
-codex features enable default_mode_request_user_input
 codex plugin marketplace add fab7hq/ringframe
 codex plugin add rf@ringframe
 ```
 
-In Codex, open `/hooks` and trust the `rf@ringframe` prompt hook. The feature
-above enables Ask and Seal confirmation outside Plan mode.
+Start a new host session after installation. In Codex, open `/hooks` and trust
+the `rf@ringframe` prompt hook. Ask and Seal require the native
+`request_user_input` tool. If unavailable, use a host mode that exposes it;
+on hosts offering `default_mode_request_user_input`, you can enable that
+feature with `codex features enable default_mode_request_user_input`.
+RingFrame does not change host settings.
 
 ## Use
 
@@ -75,12 +77,12 @@ ringframe eval list --json
 ringframe ledger verify --json
 ```
 
-## Before release
+## Qualification limits
 
-The current judged Eval and the edited skill instructions still need host
-qualification. Earlier host results apply to earlier artifacts; see the
-[Claude Code](docs/architecture/claude-code.md) and
-[Codex](docs/architecture/codex.md) notes for their scope.
+Formal host qualification is incomplete. Earlier host results apply to their
+recorded artifacts; see the
+[Claude Code](https://github.com/fab7hq/ringframe/blob/main/docs/architecture/claude-code.md) and
+[Codex](https://github.com/fab7hq/ringframe/blob/main/docs/architecture/codex.md) notes for their scope.
 
-See the [documentation](docs/README.md), [contributor instructions](AGENTS.md),
-and [security policy](SECURITY.md). Licensed under [Apache 2.0](LICENSE).
+See the [documentation](https://github.com/fab7hq/ringframe/blob/main/docs/README.md), [contributor instructions](https://github.com/fab7hq/ringframe/blob/main/AGENTS.md),
+and [security policy](https://github.com/fab7hq/ringframe/blob/main/SECURITY.md). Licensed under [Apache 2.0](https://github.com/fab7hq/ringframe/blob/main/LICENSE).

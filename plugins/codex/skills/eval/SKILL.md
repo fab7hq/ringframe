@@ -20,7 +20,7 @@ judge tool rules during each judge pass.
 
 Delegation is part of this skill: use four native sub-agents, one intent
 judge followed by three assessors. Use the exposed native tool
-(`collaboration.spawn_agent` on current Codex). Give each child its task,
+(for example, `collaboration.spawn_agent`, when that is the exposed tool). Give each child its task,
 exact output schema below, input paths and assigned output path. While the
 intent judge reads the Asks, inspect the brief and prepare the assessor tasks;
 while assessors work, prepare the close command without reading their drafts.

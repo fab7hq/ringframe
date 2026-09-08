@@ -1,13 +1,13 @@
-# RingFrame host profile: codex@0.153 (authored configuration; identity = sha256 of canonical JSON)
+# RingFrame host profile: codex (authored configuration; identity = sha256 of canonical JSON)
 schema: ringframe.profile/1
-profile_id: codex@0.153
+profile_id: codex
 host: codex
-version_range: '>=0.153.0 <0.154'
+version_range: null
 surface: native-tui
 invocation_prefix: '/rf:'
 confirmation:
   tool: request_user_input
-  requires_feature: default_mode_request_user_input
+  requires_feature: null
 capabilities:
 - id: native_plan
   purpose: Codex Plan mode, entered by the person with /plan

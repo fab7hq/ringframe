@@ -35,7 +35,7 @@ def _actor(actor):
 
 
 def _authorized(ws, actor, capability, effects) -> dict:
-    """Interactive humans act by being present. Any other actor needs a pre-authorization record (ADR-0004)."""
+    """Interactive humans act by being present. Any other actor needs a pre-authorization record."""
     import json
     if actor["kind"] == "human" and actor.get("authority", "interactive") == "interactive":
         return actor
@@ -82,8 +82,8 @@ def _staged(staged: Path) -> tuple[bytes, str, bytes]:
 
 
 def _render_prompt(ws, profile, cap, capability, classification, text_in: bytes, form: str) -> tuple[bytes, dict]:
-    """prompt = capability prefix + text (+ rendered directives when form is body). The selection is always the CLI's
-    (ADR-0008 decision 10): a composed prompt records what was supplied, recomputed from the classification."""
+    """prompt = capability prefix + text (+ rendered directives when form is body). The selection is always the CLI's;
+    a composed prompt records what was supplied, recomputed from the classification."""
     try:
         rendered = deltas.render(ws, profile, capability, classification)
     except config.ConfigError as e:
@@ -141,7 +141,7 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
     actor = _authorized(ws, _actor(actor), capability, classification.get("effects", []))
     limitations = list(limitations or []) + list(cap.get("limitations", []))
     if profile["profile_id"] == "unknown":
-        limitations.append("qualification gap: no profile for this host and version")
+        limitations.append("qualification gap: no profile for this host")
     ask_id = ids.new_id("ask")
     # Provisional references let the event be validated before anything is written.
     source_ref = {"role": "source_intent", "path": f"asks/{ask_id}/source.txt", "bytes": len(source), "sha256": digest.sha256_bytes(source)}
@@ -152,7 +152,7 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
     data = {"title": title, "classification": classification, "selected_capability": capability, "route_explanation": route,
             "host": {"name": host["name"], "version": host.get("version"), "surface": host.get("surface"),
                      "session_ref": host.get("session_ref"), "workspace": ws.describe(), **provenance,
-                     "profile_id": profile["profile_id"], "profile_sha256": profiles.sha256(profile["profile_id"].split("@")[0] if profile["host"] else "unknown")},
+                     "profile_id": profile["profile_id"], "profile_sha256": profiles.sha256(profile["host"] or "unknown")},
             "source": source_ref, "prompt": prompt_ref, "source_verified": verified, "limitations": limitations,
             "delivery_mode": cap["delivery_mode"], "compiler": compiler, "base_commit": _head(ws)}
     ev = _event("ask.compiled", ask_id, actor, data, links)
@@ -245,7 +245,7 @@ def _prompt_match(ws, compiled: dict, sha256: str) -> str | None:
     data = (ws.rf_dir / ref["path"]).read_bytes()
     if digest.sha256_bytes(data.rstrip(b"\n")) == sha256:
         return "trailing_newline_dropped"
-    prefix = (profiles.capability(profiles.by_id(compiled["host"]["profile_id"]), compiled["selected_capability"]) or {}).get("prompt_prefix")
+    prefix = (profiles.capability(profiles.for_host(compiled["host"]), compiled["selected_capability"]) or {}).get("prompt_prefix")
     if prefix and data.startswith(prefix.encode()):
         stripped = data[len(prefix):]
         if sha256 in (digest.sha256_bytes(stripped), digest.sha256_bytes(stripped.rstrip(b"\n"))):

@@ -6,8 +6,10 @@ direct execution continues in the same turn.
 
 ## Setup
 
-Follow the [README](../../README.md#codex) to install. Enable
-`default_mode_request_user_input` for native confirmation outside Plan mode.
+Follow the [README](../../README.md#codex) to install. Ask and Seal require
+the native `request_user_input` tool in the current turn. If it is unavailable,
+use a host mode that exposes it. The `default_mode_request_user_input` flag
+is an optional setup path on hosts that offer it, not a required profile setting.
 In Codex, open `/hooks` and trust the `rf@ringframe` UserPromptSubmit hook.
 Without capture, RingFrame cannot verify the source or observe pasted input.
 
@@ -44,11 +46,18 @@ is not a submission receipt. The hook can record a matching submission;
 
 ## Profile and limits
 
-The [shipped profile](../../core/ringframe/profiles/codex.yaml) matches
-`>=0.153.0 <0.154`. This routing range is broader than the exact tested build.
-It supplies `/plan ` and `/goal ` prefixes and a 4,000-character Goal limit.
-Outside the range, callers must select the unknown profile's `human_handoff`
-capability; compiling a named native capability is refused.
+The [shipped profile](../../core/ringframe/profiles/codex.yaml) is selected by
+host name `codex`, independently of its version. Its stable ID is `codex`;
+the profile digest identifies the configuration, and captured host versions
+remain provenance in the ledger. It supplies `/plan ` and `/goal ` prefixes
+and a 4,000-character Goal limit.
+
+Profile selection does not prove that a tool or route is available. The host
+must expose the selected capability and native confirmation tool; missing or
+rejected confirmation stops the skill without a confirmed Ask or Seal. An
+unrecognized host uses the `unknown` profile and its `human_handoff` capability.
+There is no model pin or host-version window, and no claim of support for every
+past or future build or surface.
 
 - Matching tolerates a dropped trailing newline or host-stripped capability
   prefix and records which form matched.
@@ -82,7 +91,8 @@ skill bytes or the complete workflow.
 
 ## Earlier host evidence
 
-The Fab7 HostLab evidence index reports these predecessor results:
+The following historical results were reported from maintainer tests. Their
+raw records are not published or included in this repository or package:
 
 | Qualification | Artifact and surface | Reported scope |
 | --- | --- | --- |
@@ -90,7 +100,7 @@ The Fab7 HostLab evidence index reports these predecessor results:
 | `ringframe-loop-codex-q07` | `5190802`; same host/model surface | 3/3 two-Ask loops with observed input and the earlier Eval and Seal design |
 | `ringframe-ask-codex-tui-q01` | Codex 0.153.4; one human TUI run card | Paste-path observations with ambiguity and chooser findings; not release qualification |
 
-These references identify historical artifacts retained in Fab7 HostLab.
-The current judged Eval and edited skill instructions need fresh qualification.
+The identifiers above are provenance labels, not paths users must resolve.
+Formal qualification of the current candidate remains incomplete.
 Earlier app-server results do not establish native-TUI parity, revision/cancel
 coverage, or prompt quality.
