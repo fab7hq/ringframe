@@ -1,57 +1,59 @@
 # RingFrame agent instructions
 
-## Setup
+## Work locally
 
-~~~sh
-uv sync
-~~~
+- Run these commands from `ringframe/`:
 
-Python ≥ 3.11, standard library plus PyYAML (authored configuration is YAML) at runtime. `pytest` is the only dev
-dependency.
+  ```sh
+  uv sync --locked
+  uv run --locked pytest
+  uv run --locked python -m ringframe --help
+  uv build
+  ```
 
-## Commands
+- Put core changes in `core/ringframe/`, tests in `core/tests/`, and host
+  instructions in `plugins/claude/` or `plugins/codex/`.
+- Use disposable consumer workspaces for CLI examples and tests. Never create
+  `.fab7/` in this source repository or commit ledgers, runs, plans, changelogs,
+  dated notes, or task IDs.
+- Preserve unrelated edits. Use the configured Git identity; never override
+  `user.email`.
 
-~~~sh
-uv run pytest                      # full suite, no model calls
-uv run python -m ringframe --help  # the CLI from this checkout
-uv build                           # wheel + sdist into dist/
-~~~
+## Preserve contracts
 
-## Layout
+- Put deterministic guarantees in the CLI and tests. Treat skill instructions
+  as behavioral guidance, never as enforcement or proof of execution.
+- Route every ledger write through the CLI. Keep finalized artifacts and
+  ledger lines immutable; correct them with new records and typed links.
+- Preserve public JSON keys, schemas, and exit codes from 0.0.1 onward. Extend
+  contracts compatibly; do not silently remove or rename fields.
+- Preserve global-option placement: `--json`, `--workspace`, `--actor`, and
+  `--authority` may appear before or after subcommands.
+- Keep hook scripts non-blocking and exiting 0, including on malformed input
+  or a missing CLI. Record delivery only from the appropriate evidence.
+- Mark source text verified only when it matches a captured Ask invocation
+  in the resolved session; a session ID alone is insufficient.
 
-~~~text
-core/ringframe/     package: ids, digest, workspace, store, schema, profiles, sessions, ask, evaluate, seal, cli
-core/ringframe/profiles/   host capability profiles (YAML); deltas/ holds the host and practice catalogs
-core/tests/         pytest
-plugins/claude/     the `rf` Claude Code plugin: skills/, hooks/
-.claude-plugin/     marketplace manifest pointing at plugins/claude
-docs/               product authority and architecture notes
-~~~
+## Implement and verify
 
-## Rules
+- Add a failing regression test before changing behavior, then make the
+  smallest change that passes it. Keep modules small and dependencies minimal.
+- Run relevant deterministic tests and `git diff --check` before handoff;
+  run the full suite for changes to shared contracts or skill instructions.
+- Do not call a model from unit tests. Before sandboxed LLM testing or host
+  acceptance claims, read and follow the parent Fab7 `LLM_VERIFICATION.md`
+  and HostLab procedure. If unavailable, obtain them before starting that work.
+- Cite retained qualification IDs and exact tested artifacts for host claims.
+  Treat changed plugin bytes as needing fresh qualification; unit tests do
+  not prove host or model behavior.
 
-- This repository holds source only. Never create `.fab7/` here, never commit
-  a ledger, a run, a plan, a changelog, a dated note, or a task id.
-- Every guarantee lives in the CLI and its tests. Skills shape behaviour; they
-  do not enforce it and never write the ledger.
-- Finalized artifacts and ledger lines are immutable. Fix forward with new
-  records and typed links.
-- Do not claim host behaviour that a retained qualification does not show.
-  Host tuples are cited by qualification id.
-- Commit with the configured Git identity; never override `user.email`.
+## Maintain documentation
 
-## Conventions
-
-- Public JSON keys and exit codes (`0` ok, `1` usage, `2` refused, `3` needs
-  input, `4` internal) are a contract from `0.0.1`; add keys, never remove.
-- Tests before code. A behaviour without a test in `core/tests/` does not exist.
-- Keep modules small and flat; no frameworks, no plugins to the plugin.
-
-## Gotchas
-
-- `--json`, `--workspace`, `--actor`, `--authority` may appear anywhere on the
-  command line; the CLI hoists them.
-- Hook scripts must always exit 0. A RingFrame failure must never block a
-  Claude Code turn.
-- `source_verified` is `exact` only when a `UserPromptSubmit` capture exists
-  for the same session; the Agent SDK surface may not run plugin hooks.
+- Keep the README focused on installation, first use, and material limitations.
+- Keep technical documents short; link to the owning reference instead of
+  repeating its contract. Use fenced `mermaid` blocks for every diagram or
+  sequence; use tables for file layouts and vocabularies.
+- Keep this file limited to instructions, guidance, and best practices. Put
+  product descriptions and implementation details in `docs/`.
+- Check commands, paths, event names, and claims against the current source.
+  Separate implemented behavior, intended skill behavior, and tested evidence.

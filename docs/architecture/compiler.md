@@ -1,42 +1,48 @@
-# Compiler: delta catalogs
+# Prompt compiler
 
-The CLI selects; the model composes (default); the CLI can also render
-(baseline). Three staged forms, always `source.txt` plus one of:
+The CLI selects instruction deltas from YAML catalogs; the skill composes them
+into a task brief. Every candidate stages `source.txt` plus exactly one form:
 
-| Staged file | Who phrases the directives | `compiler.source` |
+| File | Processing | `compiler.source` |
 | --- | --- | --- |
-| `composed.txt` (default) | the skill, after `ringframe deltas render --json` returned the selected directives (`id`, `label`, `text`), writes the task brief followed by `Rules:` and one `- <labels>: <directive applied to this task>` line per applied directive; the CLI adds the prefix, audits every label against the supplied set, and records `applied` and `omitted` | `composed` |
-| `body.txt` (baseline) | the CLI appends `Rules:` with one `- <label>: <directive>` line per selected entry, verbatim | `body` |
-| `prompt.txt` (legacy) | the model wrote everything | `prompt` |
+| `composed.txt` | Add the capability prefix; audit labelled `Rules:` lines against supplied directives. | `composed` |
+| `body.txt` | Add the prefix and append selected directives verbatim. | `body` |
+| `prompt.txt` | Preserve the supplied complete prompt; validate any required prefix. | `prompt` |
 
-In every form the CLI adds the capability prefix, enforces the length limit,
-validates `concerns` before any write, and records in
-`ask.compiled.data.compiler` the catalog digests, the selected entry ids
-(recomputed from the classification, never taken from the model), the matched
-concerns, and anything dropped by the budget.
+`composed.txt` is the shipped skills' default; `body.txt` is a rendering baseline;
+`prompt.txt` is the legacy input. All forms validate concerns and capability
+length limits. Only the composed and body forms record catalog selection
+provenance; legacy input records `compiler.source` alone.
 
-Two catalogs, all YAML:
+## Catalogs
 
-| Catalog | Where | Keyed by | Renders by default |
-| --- | --- | --- | --- |
-| host deltas | `core/ringframe/deltas/<host>.yaml` | host, capability | only `qualified` entries; every shipped entry is a `candidate` until a probabilistic advantage evaluation on that stratum passes |
-| practice deltas | `core/ringframe/deltas/practice/software-development.yaml`, overridden by `~/.fab7/rf/deltas.yaml` then `<workspace>/.fab7/rf/deltas.yaml` | classification `task`, `result`, `effects`, `concerns` | `attributed` and `qualified` entries |
+| Catalog | Selection | Default inclusion |
+| --- | --- | --- |
+| `core/ringframe/deltas/<host>.yaml` | Host and capability | `qualified` entries |
+| `core/ringframe/deltas/practice/software-development.yaml` | Task, result, effects, concerns | `attributed` and `qualified` entries |
 
-Practice entries are semantic directives organised by software-engineering
-law; each carries a short `label` (KISS, Hyrum, Boy Scout) that appears only
-as the traceability tag of its `Rules:` line, never as an explanation. Selection is
-tiered: `core` entries render on task match (capped, `render.core_cap`),
-`situational` entries only when a classified concern matches, `reference`
-entries never. Overrides replace fields by entry id (`text`, `enabled`,
-`applies_to`, `tier`, `concerns`) or add new ids.
+Practice configuration layers are the shipped catalog, then
+`~/.fab7/rf/deltas.yaml`, then `<workspace>/.fab7/rf/deltas.yaml`. Overrides
+replace fields by entry ID or add new IDs.
 
-~~~sh
-ringframe deltas list --host codex --capability native_goal --json
-ringframe deltas list --effective --json          # merged practice set with the layer each line came from
-ringframe deltas render --host codex --host-version "codex-cli 0.153.4" --capability native_plan \
-  --classification '{"task":["implement"],"result":"workspace_change","interaction":"approval_gated","horizon":"session","effects":["write"],"concerns":["api_surface"]}'
-~~~
+Practice entries have a label and tier: `core` uses task matching and a cap;
+`situational` also requires a matching concern; `reference` never renders.
+Composed `Rules:` lines use the supplied labels, such as KISS, as traceability
+tags. The CLI audits labels and records applied and omitted directives; it does
+not judge whether the wording correctly applies the rule.
 
-No delta carries a check: whether the work has the property a directive asks
-for is `rf:eval`'s question. Design: `plans/ringframe/adr/0008` in the fab7
-planning tree; identities are digests of each document's canonical JSON.
+## Inspect and trace
+
+```sh
+ringframe deltas list --effective --json
+ringframe deltas render --host codex --capability native_plan \
+  --classification '{"task":["implement"],"result":"workspace_change","interaction":"approval_gated","horizon":"session","effects":["write"],"concerns":["api_surface"]}' --json
+```
+
+`ask.compiled.data.compiler` records catalog digests, selected IDs, matching
+concerns, and budget omissions for rendered forms. Composed input also records
+applied and omitted IDs. Catalog identities hash canonical JSON parsed from YAML.
+
+Shipped host deltas remain candidates and are excluded by default. Candidate
+text and successful composition alone do not establish improvement over the
+native prompt baseline. [Eval](../product/eval.md) judges the resulting work.

@@ -1,68 +1,96 @@
 # Codex adapter
 
-Codex's Plan mode (`/plan`) and persistent goal (`/goal`) are entered by the
-person; no model-callable transition exists. So on Codex every routed
-capability except direct execution is `human_handoff`: RingFrame compiles and
-confirms the prompt, the person submits it, and the plugin's prompt hook
-observes that submission.
+The `rf` plugin provides `$rf:ask`, `$rf:eval`, and `$rf:seal` as explicit-only
+skills. RingFrame's Codex adapter uses manual handoff for Plan and Goal routes;
+direct execution continues in the same turn.
 
-Prerequisites: `uv tool install ringframe`, then
-`codex features enable default_mode_request_user_input` (the confirmation
-tool outside Plan mode). Codex loads the plugin's bundled `hooks.json` but
-runs the hook only after you trust it: open `/hooks` in Codex and trust the
-`rf@ringframe` UserPromptSubmit hook (Codex records its hash under
-`hooks.state` in `config.toml`). Until then submission stays `unobserved`.
+## Setup
 
-~~~text
-$rf:ask <intent>
-  UserPromptSubmit hook -> ringframe sessions capture --host codex   (exact invocation bytes)
-  skill: classify (task, result, effects, concerns); write source.txt + body.txt
-  skill: ringframe ask compile --staged ...          (renders prompt.txt = "/plan " or "/goal " + body +
-                                                      delta catalogs; refuses an over-long goal before any
-                                                      write; ask.compiled records which deltas rendered)
-  skill: request_user_input                          (Proceed / other route / Cancel; free text revises)
-  skill: ringframe ask confirm --ask | ask cancel --ask   (graded: observed by the skill,
-                                                      surface request_user_input)
-  skill: ringframe ask delivery --ask <id> --handoff (ask.delivery handoff_ready; shows prompt.txt)
-  person: pastes prompt.txt into the composer
-  UserPromptSubmit hook -> ringframe sessions capture   (digest equals prompt.txt, with or without
-                                                      its trailing newline -> ask.submission observed)
-  Codex: Plan mode or goal under its own permissions
-~~~
+Follow the [README](../../README.md#codex) to install. Enable
+`default_mode_request_user_input` for native confirmation outside Plan mode.
+In Codex, open `/hooks` and trust the `rf@ringframe` UserPromptSubmit hook.
+Without capture, RingFrame cannot verify the source or observe pasted input.
 
-Observed Codex behaviours the adapter accounts for (TUI run card
-`ringframe-ask-codex-tui-q01`, one human run on 0.153.4):
+## Ask path
 
-- Codex strips the slash command before `UserPromptSubmit` runs: pasting
-  `/plan <text>` reaches the hook as `<text>`. The submission match therefore
-  also accepts the compiled prompt without its capability prefix and records
-  `match: host_prefix_stripped`.
-- The `request_user_input` chooser can disappear on its own after a while in
-  Default mode. The skill treats a missing answer as a cancel and never
-  proceeds without a recorded answer; RingFrame records nothing for that Ask
-  beyond `ask.compiled` and `ask.cancelled`. What Codex itself does after the
-  dismissal is host behaviour outside RingFrame's control.
-- Invoking `$rf:ask` twice with the same text within 30 minutes makes the
-  session lookup ambiguous; RingFrame then verifies nothing, falls back to the
-  unknown profile, and hands off without the `/plan ` prefix. Use one
-  invocation per intent, or vary the text.
+```mermaid
+sequenceDiagram
+    actor User
+    participant Host as Codex
+    participant Skill as Ask skill
+    participant CLI as RingFrame CLI
+    User->>Host: $rf:ask intent
+    Host->>CLI: UserPromptSubmit capture
+    Host->>Skill: Explicit invocation
+    Skill->>CLI: Select directives and compile staged candidate
+    CLI-->>Skill: Ask ID and stored prompt
+    Skill->>User: request_user_input with exact prompt
+    alt Proceed with Plan or Goal
+        Skill->>CLI: Confirm and record handoff_ready
+        Skill-->>User: Complete prompt.txt path
+        User->>Host: Submit prompt contents
+        Host->>CLI: Capture and match submission
+    else Proceed directly
+        Skill->>CLI: Record confirmation
+        Skill->>Host: Continue in the same turn
+    else Cancel or no answer
+        Skill->>CLI: Record cancellation
+    end
+```
 
-Profile `codex@0.153` (`core/ringframe/profiles/codex.yaml`) records the
-feature prerequisite, the prompt prefixes, the goal length limit, and that
-`native_direct` with write, execute, or external effects needs an explicit
-request in the route.
+Revisions compile a successor candidate and return to confirmation. A handoff
+is not a submission receipt. The hook can record a matching submission;
+`ask submitted` records only a caller's attestation.
 
-Qualified host tuple: Codex CLI 0.153.4 through the app-server,
-`gpt-5.6-terra` at low effort, plugin hook trusted, feature
-`default_mode_request_user_input` enabled (`ringframe-ask-codex-q07`,
-candidate `156a8bf`: three of three attempts obtained the CLI-selected
-directives, composed one brief with a labelled `Rules:` list (all eight
-supplied directives applied), compiled the exact intent before the chooser,
-confirmed through `request_user_input` with the rendered prompt, recorded a
-`handoff_ready` delivery with no submission claim, clean ledger, no project
-write; `compiler.source = composed` in all three). q05 and q06 passed on earlier
-bytes; the TUI run card `ringframe-ask-codex-tui-q01` showed the paste path
-end to end. Not covered: revision and cancel branches, prompt quality. Other
-Codex versions degrade to the unknown profile and human handoff. Unit tests:
-`core/tests/test_plugin.py`, `test_profiles.py`, `test_ask.py`,
-`test_sessions.py`.
+## Profile and limits
+
+The [shipped profile](../../core/ringframe/profiles/codex.yaml) matches
+`>=0.153.0 <0.154`. This routing range is broader than the exact tested build.
+It supplies `/plan ` and `/goal ` prefixes and a 4,000-character Goal limit.
+Outside the range, callers must select the unknown profile's `human_handoff`
+capability; compiling a named native capability is refused.
+
+- Matching tolerates a dropped trailing newline or host-stripped capability
+  prefix and records which form matched.
+- If the chooser returns no answer, the skill cancels. Host behavior after
+  dismissal remains outside RingFrame's control.
+- Identical Ask text in multiple recent captured sessions makes automatic
+  session lookup ambiguous. A repeat within one session alone does not.
+- Eval can fall back to sequential judge passes when sub-agents are unavailable;
+  these are marked `shared_context`, not independent agents.
+
+## Eval delegation
+
+For an explicit request for the intended four native judges, use:
+
+```text
+$rf:eval — explicitly use four native sub-agents for this evaluation.
+```
+
+The skill requests an intent judge followed by coverage, drift, and adversarial
+assessors. Codex owns spawning and permissions. A pending command or unread
+tool result does not establish that delegation is unavailable. When a native
+sub-agent tool is absent or reports unavailability, the fallback records
+`shared_context`.
+
+The diagnostic `ringframe-eval-delegation-codex-q01` used candidate `3edcbac`,
+Codex 0.153.4 and `gpt-5.6-terra` at low effort: the plain invocation used four
+native judges in 1/3 runs, the explicit request in 3/3. All six completed Eval.
+This small sample supports the explicit wording; it does not prove a hard
+permission requirement or guarantee delegation. It does not qualify changed
+skill bytes or the complete workflow.
+
+## Earlier host evidence
+
+The Fab7 HostLab evidence index reports these predecessor results:
+
+| Qualification | Artifact and surface | Reported scope |
+| --- | --- | --- |
+| `ringframe-ask-codex-q07` | `156a8bf`; Codex 0.153.4 through app-server; gpt-5.6-terra, low | 3/3 composed Asks, native confirmation, handoff, clean ledger; no submission claim |
+| `ringframe-loop-codex-q07` | `5190802`; same host/model surface | 3/3 two-Ask loops with observed input and the earlier Eval and Seal design |
+| `ringframe-ask-codex-tui-q01` | Codex 0.153.4; one human TUI run card | Paste-path observations with ambiguity and chooser findings; not release qualification |
+
+These references identify historical artifacts retained in Fab7 HostLab.
+The current judged Eval and edited skill instructions need fresh qualification.
+Earlier app-server results do not establish native-TUI parity, revision/cancel
+coverage, or prompt quality.

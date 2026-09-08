@@ -8,12 +8,30 @@ against every open Ask in this workspace and records a verdict with a
 confidence. It asks the person nothing, runs none of the project's commands,
 and gates nothing: the person decides what to do with the result.
 
-Shell discipline: the shell is for `ringframe` only, exactly one plain
-`ringframe …` command per call. No `&&`, `;`, pipes, `2>&1`, `head`, `cd`,
+Shell discipline: the coordinator uses the shell for `ringframe` only:
+exactly one plain `ringframe …` command per call. No `&&`, `;`, pipes,
+`2>&1`, `head`, `cd`,
 `which`, or `codex --version`. Read the command's JSON output directly; never
 page or filter it. Judges read files with the file-reading tool and the
-repository with `git` read commands (`git diff`, `git show`, `git log`);
-nobody edits.
+repository with `git` read commands (`git diff`, `git show`, `git log`).
+Keep project files read-only; judges may write only their assigned output
+files under `.fab7/rf/tmp/`. In the shared-context fallback, follow these
+judge tool rules during each judge pass.
+
+Delegation is part of this skill: use four native sub-agents, one intent
+judge followed by three assessors. Use the exposed native tool
+(`collaboration.spawn_agent` on current Codex). Give each child its task,
+exact output schema below, input paths and assigned output path. While the
+intent judge reads the Asks, inspect the brief and prepare the assessor tasks;
+while assessors work, prepare the close command without reading their drafts.
+
+Collect each command's completed result before interpreting it. In Codex code
+mode, emit the entire awaited tool result with `text(...)`, including its
+status and session ID. If `functions.exec` yields a cell ID, use
+`functions.wait`; if `exec_command` returns a running `session_id`, poll it
+with `write_stdin` and empty input until it exits, retaining every output.
+An empty initial output is not a completed command or evidence that native
+sub-agents are unavailable. Polling does not rerun `eval open`.
 
 1. Open. Run `ringframe eval open --json`; keep `eval_id`, `brief_path`, and
    `brief.sha256`. The brief lists the open Asks in order (each with its
@@ -24,7 +42,7 @@ nobody edits.
    an Eval over these Asks is open and unclosed; continue with the `eval_id`
    in `detail` and its brief under `.fab7/rf/evals/<eval_id>/brief.json`. Run
    `eval open` once per Eval.
-2. Intent, one sub-agent. Spawn a sub-agent (read-only) with `brief_path` and
+2. Intent, one sub-agent. Spawn a sub-agent (project read-only) with `brief_path` and
    `brief.sha256`: read the brief and each Ask's `prompt.txt` in order; write
    the effective intent as numbered items, one obligation each, in the Asks'
    own words; when a later Ask changes an earlier obligation mark the earlier
@@ -38,9 +56,8 @@ nobody edits.
    `{"schema":"ringframe.eval-intent/1","brief_sha256":"<brief.sha256>",
    "judge":{"host":"codex","model":"<model id>","angle":"intent","independence":"sub_agent"},
    "items":[{"id":"i1","text":"...","ask_id":"ask_...","status":"active|revised|withdrawn","by_ask_id":"...","note":"..."}]}`.
-3. Assessors, three sub-agents spawned together in one message, never
-   detached or in the background (a background sub-agent cannot obtain
-   approvals, so every one of its tool calls is denied), read-only,
+3. Assessors, three sub-agents spawned together; wait for all three to
+   finish before closing the Eval. Their project access is read-only,
    each told to read files with the file tool, run one plain `git …` command
    per shell call, and write only its own file; each with `brief_path`,
    `brief.sha256`, the intent file path, and one angle. Each reads the brief,
@@ -63,10 +80,11 @@ nobody edits.
      missing case, the wrong behaviour, the untested claim. `no` only when you
      can point at the failure, else `unknown`; `yes` when you tried and found
      nothing.
-   If this Codex has no sub-agent tool, run the four passes yourself, one
+   Use the fallback only if the native tool is absent or returns an explicit
+   unavailability error; record that limitation. Run the four passes yourself, one
    after another, each from a fresh reading of the files, and set
    `"independence":"shared_context"` in every file; the record will say so.
-   Sub-agents do not write the ledger, do not edit files, and do not run the
+   Sub-agents do not write the ledger, do not edit project files, and do not run the
    project's build or tests.
 4. Close. `ringframe eval close --eval <eval_id> --intent @<intent file>
    --judgement @<coverage file> --judgement @<drift file> --judgement

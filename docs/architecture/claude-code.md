@@ -1,39 +1,64 @@
 # Claude Code adapter
 
-The `rf` plugin ships three explicit-only skills (`/rf:ask`, `/rf:eval`,
-`/rf:seal`) and two hooks. Skills carry the routing rules and drive Claude
-Code's native surfaces; they never write the ledger. The `ringframe` CLI does
-every write.
+The `rf` plugin provides `/rf:ask`, `/rf:eval`, and `/rf:seal` as explicit-only
+skills. Skills call the `ringframe` CLI for record writes; hooks capture prompt
+and Plan activation evidence. See the [README](../../README.md#claude-code)
+for installation.
 
-~~~text
-/rf:ask <intent>
-  UserPromptSubmit hook -> ringframe sessions capture   (exact invocation bytes)
-  skill: classify, compile, AskUserQuestion              (proceed / revise / other route / cancel)
-  skill: Write source.txt + body.txt to .fab7/rf/tmp/stage-*/   (the task body only)
-  skill: ringframe ask compile --staged ...              (renders prompt.txt = prefix + body + delta catalogs,
-                                                          publishes artifacts, appends ask.compiled with
-                                                          compiler provenance; source_verified = exact when
-                                                          bytes match the capture)
-  skill: AskUserQuestion answered -> ringframe ask confirm --ask | ask cancel --ask   (graded: observed by the skill)
-  skill: EnterPlanMode
-  PostToolUse hook -> ringframe ask delivery --from-hook (appends ask.delivery native_accepted from the receipt)
-  Claude Code: research, plan, ExitPlanMode, implementation under its own permissions
-~~~
+## Ask path
 
-Delivery is recorded only from the hook's receipt. If the hook does not fire,
-no `ask.delivery` line exists and RingFrame has no recorded delivery outcome.
-Direct execution records a confirmed Ask and no delivery, because no native
-receipt exists for same-turn continuation. Any error from `EnterPlanMode`
-downgrades to `delivery_failed` plus a human handoff that names the prompt
-file and never implies the prompt was submitted.
+```mermaid
+sequenceDiagram
+    actor User
+    participant Host as Claude Code
+    participant Skill as Ask skill
+    participant CLI as RingFrame CLI
+    User->>Host: /rf:ask intent
+    Host->>CLI: UserPromptSubmit capture
+    Host->>Skill: Explicit invocation
+    Skill->>CLI: Select directives and compile staged candidate
+    CLI-->>Skill: Ask ID and stored prompt
+    Skill->>User: AskUserQuestion with exact prompt
+    alt Proceed with Plan
+        Skill->>CLI: Record confirmation
+        Skill->>Host: EnterPlanMode
+        Host->>CLI: PostToolUse receipt
+        Host->>User: Native planning and plan review
+    else Proceed directly
+        Skill->>CLI: Record confirmation
+        Skill->>Host: Continue in the same turn
+    else Cancel
+        Skill->>CLI: Record cancellation
+    end
+```
 
-Qualified host tuple: Claude Code 2.1.263 through the Agent SDK, Sonnet 5 at
-low effort (`ringframe-ask-ledger-q07`, candidate `156a8bf`: three of three
-attempts obtained the CLI-selected directives, composed one brief with a
-labelled `Rules:` list (all eight supplied directives applied), persisted
-the exact intent before the chooser, confirmed natively with the rendered
-prompt as preview, entered Plan mode, and recorded the hook receipt with a
-clean ledger; `compiler.source = composed` in all three). Predecessors q04, q05 and
-q06 passed on earlier bytes. `EnterPlanMode` activation itself was first
-qualified in `ringframe-ask-plan-q04`. Other host versions degrade to the
-unknown profile and human handoff.
+Revisions compile a successor candidate and return to confirmation. Plan
+activation records `native_accepted` only when the hook supplies its receipt;
+it does not resubmit the prompt as a new user message. Direct continuation has
+no delivery receipt. On activation error, the skill reports failure and offers
+the stored prompt for manual handoff.
+
+## Profile and limits
+
+The [shipped profile](../../core/ringframe/profiles/claude-code.yaml) matches
+`>=2.1.260 <2.2`. This is a routing range, not proof of every version in that
+range. Unknown versions use the unknown profile; a capability absent from that
+profile is refused until the caller selects `human_handoff`.
+
+The Ask skill exposes Plan and direct execution. The profile also defines a
+manual Goal route, which this skill does not offer. Both hooks exit 0 on errors;
+missing hook evidence leaves source or delivery unverified.
+
+## Earlier host evidence
+
+The Fab7 HostLab evidence index reports these predecessor results:
+
+| Qualification | Artifact and surface | Reported scope |
+| --- | --- | --- |
+| `ringframe-ask-ledger-q07` | `156a8bf`; Claude Code 2.1.263 through Agent SDK; Sonnet 5, low | 3/3 composed Asks with audited Rules, native confirmation, Plan activation receipt, and clean ledger |
+| `ringframe-loop-q05` | `007ac50`; same host/model surface | 3/3 two-Ask loops with the earlier Eval and Seal design |
+
+These references identify historical artifacts retained in Fab7 HostLab, not
+qualification of this release candidate or a general native-TUI claim. The
+current judged Eval and edited skill instructions need fresh qualification.
+Prompt quality and improvement over a native baseline require separate evidence.

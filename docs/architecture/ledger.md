@@ -1,36 +1,75 @@
 # Workspace ledger
 
-Every RingFrame write lands under the consumer's worktree:
+The CLI stores records under `.fab7/rf/` in the consumer workspace. The root is
+`--workspace` when supplied, otherwise the Git worktree root or current directory.
+Initialization creates a `.gitignore` containing `*` and sets the RF directory
+to owner-only access.
 
-~~~text
-.fab7/rf/
-├── .gitignore        "*": the directory ignores itself
-├── ledger.jsonl      append-only events, one canonical JSON object per line
-├── lock              advisory flock taken only around the final append
-├── asks/<ask_id>/    source.txt (exact intent), prompt.txt (one final prompt)
-├── evals/<evl_id>.definition.json, <evl_id>.json
-├── seals/<sel_id>.json
-├── authorizations/   optional grants for non-human actors
-├── sessions/<host>/<session>/   hook captures; prunable with `ringframe sessions prune`
-└── tmp/              staging for atomic publish; garbage after a crash
-~~~
+## Files
 
-The workspace root is the Git worktree root when one exists (`--workspace`
-overrides). Artifacts are written to `tmp/`, fsynced, renamed into place, and
-only then referenced from a ledger line that carries their byte count and
-SHA-256. Final paths are never rewritten. `ringframe ledger verify` reports
-torn tails, invalid lines, missing or tampered artifacts, unreferenced
-artifacts, duplicate deliveries, and dangling links, and repairs nothing.
+Paths below are relative to `.fab7/rf/`.
 
-Event types: `ask.confirmed`, `ask.cancelled`, `ask.delivery`,
-`eval.completed`, `seal.created`, `seal.refused`. Validation lives in
-`core/ringframe/schema.py`; vocabularies are enumerated there.
+| Path | Contents |
+| --- | --- |
+| `ledger.jsonl` | Append-only canonical JSON events |
+| `lock` | Advisory lock around the final append |
+| `asks/<ask_id>/source.txt` | Staged source intent |
+| `asks/<ask_id>/prompt.txt` | Published prompt for one candidate |
+| `evals/<eval_id>/brief.json` | Open Asks and Git facts |
+| `evals/<eval_id>/intent.json` | Judged intent items |
+| `evals/<eval_id>/judgement-<n>.json` | Assessor votes and path classifications |
+| `evals/<eval_id>/record.json` | Aggregated Eval |
+| `seals/<seal_id>.json` | Decision receipt |
+| `authorizations/<actor_id>.json` | Optional local authorization grant |
+| `sessions/<host>/<session>/` | Prunable hook captures |
+| `tmp/` | Staging files; may remain after interruption |
 
-Ids are `<prefix>_<26 Crockford base32 chars>` (48-bit millisecond time plus
-80 random bits): `ask_`, `evt_`, `evl_`, `sel_`. They sort by creation time and
-are never parsed for logic.
+## Writes and checks
 
-Resolution of "which record" without an id follows one order: explicit id or
-unique title substring, same native session, unique record in the workspace,
-otherwise a chooser (`needs_input`, exit 3). The newest record is never chosen
-for being newest.
+```mermaid
+sequenceDiagram
+    participant CLI
+    participant Files as Artifact files
+    participant Ledger
+    CLI->>Files: Write temporary artifact and fsync
+    CLI->>Files: Rename to final path and fsync directory
+    CLI->>Ledger: Acquire workspace lock
+    CLI->>Ledger: Check tail, append event, and fsync
+    CLI->>Ledger: Release lock
+```
+
+Publication and append are separate operations, not one transaction. A crash
+can leave unreferenced artifacts. Final artifacts are not intentionally
+rewritten; corrections use new records. Digests check consistency against the
+ledger, not authenticity against a malicious local writer.
+
+```sh
+ringframe ledger verify --json
+ringframe sessions prune --older-than 7d --json
+```
+
+Verification reports torn tails, invalid JSON or schema identifiers, missing or
+changed artifacts, unreferenced artifacts, dangling links, duplicate deliveries,
+and delivery without confirmation. It repairs nothing and returns exit 2 for
+findings. Full event validation runs in command writers via
+[`schema.py`](../../core/ringframe/schema.py); verification is not a full schema audit.
+Pruning removes old session captures, not Ask, Eval, or Seal artifacts, and can
+reduce later source-verification evidence and ordinary-prompt counts.
+
+## Events
+
+Each `ringframe.ledger/1` line has `schema`, `event_id`, `type`, `time`, `id`,
+`actor`, `links`, and `data`. Artifact references carry a relative path, role,
+byte count, and SHA-256.
+
+| Operation | Events |
+| --- | --- |
+| Ask | `ask.compiled`, `ask.confirmed`, `ask.cancelled`, `ask.delivery`, `ask.submission` |
+| Eval | `eval.opened`, `eval.completed` |
+| Seal | `seal.created`, `seal.refused` |
+
+Opaque IDs use `ask_`, `evt_`, `evl_`, or `sel_` followed by 26 Crockford Base32
+characters. Use links and record fields for relationships, not ID parsing.
+
+CLI exit codes: `0` success, `1` usage error, `2` refusal or failed check,
+`3` needs input, `4` internal error. See [Security](../../SECURITY.md) for retained data.

@@ -94,7 +94,7 @@ effects). Codex capabilities in this profile:
 ## 3. Confirm with the native tool
 
 First run `ringframe ask copy --ask <ask_id>` to obtain the rendered prompt
-verbatim (the CLI rendered it from your body plus its catalogs; never retype
+verbatim (the CLI rendered it from the staged candidate; never retype
 or summarise it). Then call `request_user_input` with one question, `id:
 "route"`, whose text names the selected capability, why it fits, why the
 alternatives do not, what will happen next, and includes that complete
@@ -116,5 +116,6 @@ is a revision: compile again with `--link revises:<ask_id>` and ask again.
   tell the person the Ask was cancelled, and stop. Never continue with the
   intent, plan, or hand off without a recorded answer.
 
-Submission stays unobserved unless the RingFrame prompt hook sees the exact
-bytes or the person runs `ringframe ask submitted --ask <ask_id>`.
+Submission is `observed` only when the prompt hook matches the compiled input.
+`ringframe ask submitted --ask <ask_id>` records the person's attestation as
+`attributed`, not host-observed submission.

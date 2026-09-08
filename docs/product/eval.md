@@ -1,100 +1,85 @@
-# RingFrame Eval
+# Eval
 
-Eval judges the work done so far against every open Ask in the workspace and
-records a verdict with its confidence. Facts are recorded exactly by the CLI;
-the verdict is a judgement by independent sub-agents of the eval skill. Eval
-asks the person nothing, runs none of the project's commands, knows nothing
-about the project's stack, and gates nothing.
+Eval judges the current work against every open Ask and records `verdict` and
+`confidence`. Invoke `/rf:eval` in Claude Code or `$rf:eval` in Codex.
+The skill asks no questions and runs no project builds or tests. For Codex,
+use the [explicit delegation request](../architecture/codex.md#eval-delegation)
+when requesting four native judges.
 
-~~~text
-/rf:eval
-$rf:eval
-~~~
+```mermaid
+flowchart LR
+    O[Open facts brief] --> I[Intent judge]
+    I --> C[Coverage judge]
+    I --> D[Drift judge]
+    I --> A[Adversarial judge]
+    C --> V[Validate and aggregate]
+    D --> V
+    A --> V
+    V --> R[Record verdict and confidence]
+```
 
-# Basis
+## Basis and subject
 
-Every open Ask, in confirmation order. An Ask is open from `ask.compiled`
-until a Seal names it in its basis; cancelled Asks are never open. Later Asks
-may revise or withdraw obligations of earlier ones; the *effective intent*
-after those revisions is judged, never declared by the CLI. Plain prompts are
-never stored; the brief counts how many unrecorded prompts followed each Ask
-so that changes no Ask explains can be labelled honestly.
+An Ask is open from `ask.compiled` until cancellation or a Seal names it.
+The brief lists open Asks in compilation order. Judges treat unconfirmed
+candidates as context and reconstruct obligations from confirmed Asks, including
+later revisions and withdrawals. Ordinary prompt text is not retained; counts
+come from available hook captures and can explain otherwise unexplained changes.
 
-# Anchor and subject
+Eval requires Git. Anchor selection uses an explicit `--anchor` first, then
+the latest Seal's subject if it is a Git commit, then the first available base
+commit among the open Asks. Otherwise it returns `eval.anchor_unknown` (exit 3).
+A Seal of a dirty worktree does not itself supply a commit anchor.
 
-The anchor is the commit the work is measured from: the subject of the last
-Seal in the workspace, else the commit recorded when the earliest open Ask
-was compiled (`ask.compiled` records `base_commit`), else `--anchor`. The
-subject is `HEAD` when the tree is clean, else the worktree.
+The default subject is `HEAD` for a clean tree, otherwise the worktree:
 
-| kind | reference | digest |
+| Kind | Reference | Digest |
 | --- | --- | --- |
-| `git_commit` | commit id | tree hash of the commit |
-| `worktree` | absolute root | SHA-256 over sorted path, mode, and content digest of tracked and untracked non-ignored files |
+| `git_commit` | Commit ID | Git tree hash |
+| `worktree` | Absolute root | SHA-256 over sorted file paths, modes, and content digests, including untracked non-ignored files |
 
-# Brief
+## Judgement and aggregation
 
-`ringframe eval open` writes `evals/<eval_id>/brief.json`
-(`ringframe.eval-brief/1`): the open Asks with their prompt paths and
-unrecorded-prompt counts, the anchor, the subject with its digest, the changed
-files with line counts, the previous Evals over the same Asks, and
-limitations. The brief names no command, runner, manifest, or framework.
+`eval open` writes a brief with Ask paths, anchor, subject digest, changed-file
+counts, earlier Evals sharing an Ask, and limitations. An existing unclosed
+Eval over the same Asks returns `eval.already_open`; continue with that ID.
 
-# Judgement
+One intent judge produces `active`, `revised`, or `withdrawn` items traced to
+Asks. Three assessors (`coverage`, `drift`, `adversary`) each vote
+`yes`, `no`, or `unknown` on active items and classify every changed path as
+`required`, `consequence`, or `unexplained`. Judges write only their staged
+output files. Codex's fallback uses sequential passes marked `shared_context`
+when sub-agents are unavailable.
 
-The eval skill spawns one *intent* sub-agent that turns the Asks into numbered
-items (`active`, `revised`, `withdrawn`, each traced to its Ask), then three
-read-only *assessor* sub-agents with distinct angles (`coverage`, `drift`,
-`adversary`). Each assessor votes `yes | no | unknown` per active item with a
-reason and classifies every changed path as `required`, `consequence`, or
-`unexplained`. Their files (`ringframe.eval-intent/1`,
-`ringframe.eval-judgement/1`) name the host, the model when known, the angle,
-and `independence: sub_agent | shared_context`.
+`eval close` requires at least three judgement files bound to the brief digest,
+votes covering active items, and classifications covering changed paths. The
+CLI records reported judge identity and independence; it does not authenticate
+judges or prove that their contexts were separate.
 
-`ringframe eval close` validates them (at least three judgements bound to the
-brief's digest, one vote per active item, one classification per changed
-path from every judge) and aggregates:
+| Verdict | Aggregation rule |
+| --- | --- |
+| `aligned` | All active items resolve to `yes`, with no unexplained path. |
+| `drifted` | An item resolves to `no`, or a path resolves to `unexplained`. |
+| `incomplete` | No active items, unresolved item votes without a drift finding, or a subject that changed during Eval. |
 
-- per item: majority vote and agreement (share of judges in the majority);
-- per path: majority classification and agreement; paths no judge mentioned
-  are listed as `unmentioned`;
-- `verdict`: `aligned` when every active item has a `yes` majority and no
-  path an `unexplained` majority; `drifted` when any item has a `no` majority
-  or any path an `unexplained` majority; otherwise `incomplete` (ties,
-  unknowns, no active item, or a subject that changed between open and close);
-- `confidence`: the lowest agreement among the deciding questions;
-- `drift.omission`: items without a `yes` majority; `drift.commission`: paths
-  with an `unexplained` majority.
+The output field `majority` uses the most frequent vote, even with more than
+three judges. Item ties resolve to `unknown`; path ties resolve to `unexplained`.
+Confidence is the lowest agreement among deciding questions, not a probability
+of correctness. A changed subject overrides the verdict to `incomplete`.
 
-Disagreement is reported, never averaged away. No verdict is presented as
-certain.
+## Records and CLI
 
-# Record
+Each `evals/<eval_id>/` holds `brief.json`, `intent.json`, `judgement-<n>.json`,
+and `record.json`. The record includes votes, omission and commission findings,
+limitations, and a delta from the latest completed Eval sharing an Ask.
+The ledger records `eval.opened` and `eval.completed`.
 
-`evals/<eval_id>/record.json` (`ringframe.eval/1`) holds the basis, the
-subject with its digest at open and at close, the brief, intent, and judgement
-references with digests, the verdict and confidence, the item table with every
-vote, the drift tables, `follows` (the previous Eval over the same Asks) with
-a `delta` of what closed and opened, and limitations. The ledger gets
-`eval.opened` and `eval.completed` lines with `evaluates` links to each Ask
-and a `supersedes` link to the previous Eval.
-
-# Command line
-
-~~~text
-ringframe eval open [--anchor <commit>] [--subject-kind git_commit|worktree --subject-ref <ref>] --json
-ringframe eval close --eval <eval_id> --intent @<file> --judgement @<file> --judgement @<file> --judgement @<file> [--judgement @<file>]... --json
+```sh
+ringframe eval open --json
+ringframe eval close --eval <eval_id> --intent @intent.json \
+  --judgement @coverage.json --judgement @drift.json --judgement @adversary.json --json
 ringframe eval list --json
-~~~
+```
 
-Refusals (exit 2): `eval.no_open_ask`, `eval.already_open` (an unclosed Eval
-over the same Asks; its id is in the detail), `eval.no_git`, `eval.anchor_missing`,
-`eval.too_few_judges`, `eval.brief_mismatch`, `eval.intent`,
-`eval.judgement`, `eval.missing`, `ledger.immutable`. Exit 3
-`eval.anchor_unknown` when no Seal and no Ask provide an anchor.
-
-# What Eval refuses to do
-
-Run, detect, or name any project command; store plain-prompt text; ask the
-person anything; author intent items the Asks do not state; present a verdict
-without its confidence; block a Seal.
+Eval never blocks [Seal](seal.md). Its current skill behavior still needs
+host qualification; deterministic aggregation tests do not qualify model judgement.

@@ -1,59 +1,51 @@
-# RingFrame Seal
+# Seal
 
-Seal is the person's decision to close the open Asks. It records the latest
-Eval over them as a fact and writes a receipt. It merges, publishes, deploys,
-and certifies nothing, and no Eval verdict blocks it.
+Seal closes every open Ask with your decision and writes a receipt. Invoke
+`/rf:seal <disposition> [note]` in Claude Code or
+`$rf:seal <disposition> [note]` in Codex.
 
-~~~text
-/rf:seal accepted|rejected|deferred|abandoned [note]
-$rf:seal accepted|rejected|deferred|abandoned [note]
-~~~
+Dispositions: `accepted`, `rejected`, `deferred`, `abandoned`. Each closes the
+Asks, including `deferred`. Seal does not merge, publish, deploy, or certify work.
 
-# Basis
+## Decision and authority
 
-Every open Ask. After the Seal they are closed: the next Eval and the next
-Seal start from this Seal's subject.
+The skill confirms the disposition, open Ask titles, and Eval summary once.
+An optional note is recorded verbatim. The CLI defaults to the latest completed
+Eval that shares at least one open Ask, or no Eval if none exists. The receipt
+keeps the Eval ID so consumers can inspect its actual coverage.
 
-# Refusals
+An Eval verdict, its age, changed subject, or absence does not block Seal.
+An interactive human actor is accepted as declared. Other actors need a local
+`authorizations/<actor_id>.json` grant matching their identity, disposition,
+and subject kind; an expiry is checked when supplied. These are caller-supplied
+identities and local grants, not host authentication.
 
-| code | check |
+| Refusal code | Reason |
 | --- | --- |
-| `seal.no_open_ask` | there is at least one open Ask to close |
-| `seal.eval_missing` | an `--eval` named explicitly exists and is completed |
-| `seal.eval_unrelated` | an `--eval` named explicitly judged at least one of the open Asks |
-| `seal.authority_missing` | an interactive human, or a valid authorization for a non-human actor |
+| `seal.no_open_ask` | Nothing to close. |
+| `seal.eval_missing` | An explicitly named Eval is not completed or does not exist. |
+| `seal.eval_unrelated` | An explicitly named Eval shares no open Ask. |
+| `seal.authority_missing` | No matching authorization. |
 
-A refusal appends `seal.refused` with the codes and writes no receipt.
-Everything else is a recorded fact, not a refusal: the Eval's verdict and
-confidence, whether the subject still matches the Eval's subject, the Eval's
-age, or the absence of any Eval.
+These refusals append `seal.refused` and write no receipt. Invalid input or
+storage errors can also fail through the CLI's standard error handling.
 
-# Authority
+## Receipt and verification
 
-An interactive human is authorized by being present. A non-human actor
-(`agent:` or `policy:`) needs `.fab7/rf/authorizations/<actor_id>.json`
-naming who granted it, the allowed dispositions and subject kinds, and an
-expiry.
+`seals/<seal_id>.json` records Ask IDs and titles, the current subject, the
+Eval fact (or `null`), disposition, note, actor, authority, limitations, and time.
+The Eval fact includes its record digest, verdict, confidence, age, and whether
+its subject matched at sealing. `seal.created` links the receipt to the Asks
+and the Eval. Outside Git, the subject can be unknown.
 
-# Receipt
-
-`seals/<seal_id>.json` holds the basis (Ask ids and titles); the Eval fact
-(`eval_id`, `verdict`, `confidence`, record digest, `subject_matches`,
-`age_s`) or `null`; the subject kind, reference, and digest now; the
-disposition; the person's `note` verbatim when given; the actor and
-authority; limitations; and the time. The ledger gets one `seal.created` line
-with `seals` links to each Ask and to the Eval.
-
-# Downstream
-
-`ringframe seal check --seal <seal_id> --json` re-verifies the receipt and the
-Eval record digests and reports `fresh`, the disposition, the basis, the Eval
-fact, and `subject_matches` now. Exit `0` when the receipt is intact. A gate
-that relies on a Seal reads these facts and decides for itself.
-
-# Command line
-
-~~~text
-ringframe seal create --disposition <d> [--eval <eval_id>] [--note <text>] [--actor kind:id --authority preauthorized] --json
+```sh
+ringframe seal create --disposition accepted --note "Reviewed locally" --json
 ringframe seal check --seal <seal_id> --json
-~~~
+```
+
+`seal check` verifies the receipt digest against the ledger and the referenced
+Eval record digest. `fresh: true` and exit 0 mean those checks passed.
+`subject_matches` separately compares the recorded subject with its current
+digest. For a recorded Git commit, this checks that commit, not whether the
+current `HEAD` or worktree equals it. Downstream gates must choose and check
+their own acceptance conditions.

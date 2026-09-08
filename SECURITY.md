@@ -1,23 +1,30 @@
-# Security Policy
+# Security policy
 
-## Supported releases
+## Supported versions
 
-RingFrame `0.0.x` receives security fixes. Reproduce a report against the
-newest published `0.0.x` release when practical.
+Security fixes target the latest 0.0.x release once published. Before the first
+release, include the source commit when reporting an issue.
 
-## Report a vulnerability privately
+## Report privately
 
 Use [GitHub private vulnerability reporting](https://github.com/fab7hq/ringframe/security/advisories/new).
-Include the RingFrame version, host and version, reproduction steps, impact,
-and any suggested mitigation. Remove credentials, private prompts, source, and
-unrelated logs.
+Include the version or commit, host version, reproduction steps, and impact.
+Remove credentials, private prompts, source, and unrelated logs. Do not open a
+public issue for an unpatched vulnerability.
 
-Do not open a public issue for an unpatched vulnerability.
+## Data and trust
 
-## What RingFrame does and does not guarantee
+RingFrame stores Ask text, compiled prompts, evaluations, decisions, and hook
+metadata under `.fab7/rf/`. Explicit RingFrame invocations are captured in
+full; ordinary prompts retain only digests, byte counts, and metadata.
+Git-ignore is a sharing default, not encryption. Review records before export.
 
-RingFrame records intent, prompts, evaluations, and decisions under
-`.fab7/rf/` with digests and an append-only ledger. It does not guarantee that
-a prompt was followed, that a result is correct, or that an accepted Seal is
-safe. Eval runs caller-selected commands in the caller's workspace; choose
-them as you would any script you run yourself.
+The CLI uses digests and an append-only ledger to check local consistency.
+These are not signatures or protection against someone who can rewrite both
+artifacts and ledger. Actor identity is caller-supplied, not authenticated by
+RingFrame.
+
+Eval reads Git state and records model judgements; it does not run project
+builds or tests. Skill instructions do not sandbox the host. Host permissions
+remain responsible for tool access and effects. Neither an Eval verdict nor
+an accepted Seal guarantees correctness or authorizes deployment.

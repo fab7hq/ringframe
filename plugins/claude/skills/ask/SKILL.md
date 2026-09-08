@@ -18,8 +18,9 @@ $ARGUMENTS
 
 ## Rules that hold for the whole turn
 
-- Do not inspect the workspace, research, or call any tool other than
-  `AskUserQuestion` before the user confirms.
+- Before confirmation, use tools only to select RingFrame directives, stage
+  and compile the candidate, read its rendered prompt, and show
+  `AskUserQuestion`. Do not inspect project files, research, or begin the work.
 - Preserve the source intent exactly. Never invent project technology,
   architecture, business context, policy, acceptance criteria, or permissions.
 - Never print classification labels, `NEXT_COMMAND`, a copyable `/plan`
@@ -99,7 +100,7 @@ with one single-select question:
   (Recommended)` when `native_direct` was selected): one sentence on what
   Claude Code will do next; put the complete rendered prompt in `preview`,
   obtained verbatim from `ringframe ask copy --ask <ask_id>` (the CLI rendered
-  it from your body plus its catalogs; never retype or summarise it).
+  it from the staged candidate; never retype or summarise it).
 - option `Use direct execution` (or `Plan first`): the other route.
 - option `Cancel`: nothing is activated or inspected.
 - metadata source: `ringframe.ask`

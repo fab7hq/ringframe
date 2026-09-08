@@ -11,11 +11,14 @@ every open Ask in this workspace and records a verdict with a confidence. It
 asks the person nothing, runs none of the project's commands, and gates
 nothing: the person decides what to do with the result.
 
-Shell discipline: `Bash` is for `ringframe` only, exactly one plain
-`ringframe …` command per call. No `&&`, `;`, pipes, `2>&1`, `head`, `cd`,
+Shell discipline: the coordinator uses `Bash` for `ringframe` only:
+exactly one plain `ringframe …` command per call. No `&&`, `;`, pipes,
+`2>&1`, `head`, `cd`,
 `which`, or `claude --version`. Read the command's JSON output directly;
 never page or filter it. Judges read files with `Read` and the repository
-with `git` read commands (`git diff`, `git show`, `git log`); nobody edits.
+with `git` read commands (`git diff`, `git show`, `git log`).
+Keep project files read-only; judges may write only their assigned output
+files under `.fab7/rf/tmp/`.
 
 ## 1. Open
 
@@ -90,7 +93,7 @@ angles:
 Tell every sub-agent: read files with `Read` (never `cat`), run exactly one
 plain `git …` command per `Bash` call (no `&&`, `;`, pipes, `mkdir`), write
 only its own file under `.fab7/rf/tmp/`. Sub-agents do not write the ledger,
-do not edit files, and do not run the project's build or tests; what they
+do not edit project files, and do not run the project's build or tests; what they
 read is what they judge.
 
 ## 4. Close

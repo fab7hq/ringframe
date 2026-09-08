@@ -1,15 +1,20 @@
 # RingFrame documentation
 
-| Document | Purpose |
-| --- | --- |
-| [product/product.md](product/product.md) | Product authority: what RingFrame is, owns, and refuses to own |
-| [product/ask.md](product/ask.md) | Ask command contract |
-| [product/eval.md](product/eval.md) | Eval command direction (detailed design follows the first slice) |
-| [product/seal.md](product/seal.md) | Seal command direction (detailed design follows the first slice) |
-| [architecture/ledger.md](architecture/ledger.md) | The `.fab7/rf/` workspace ledger as implemented |
-| [architecture/claude-code.md](architecture/claude-code.md) | How the `rf` plugin drives Claude Code |
-| [architecture/codex.md](architecture/codex.md) | How the `rf` plugin works on Codex (handoff) |
-| [architecture/compiler.md](architecture/compiler.md) | How `ask compile` renders prompts from delta catalogs |
+Start with the [README](../README.md) for installation and first use.
+These references describe the 0.0.1 source and intended skill behavior;
+host evidence is scoped separately in the adapter notes.
 
-Documents are claims; the tests under `core/tests/` are the evidence for what
-the code actually does.
+| Reference | Read it to understand |
+| --- | --- |
+| [Product](product/product.md) | Responsibilities and limits |
+| [Ask](product/ask.md) | Prompt compilation, confirmation, and delivery |
+| [Eval](product/eval.md) | Open Asks, judged verdicts, and confidence |
+| [Seal](product/seal.md) | Decisions, authority, and receipt checks |
+| [Ledger](architecture/ledger.md) | Local files, events, and integrity checks |
+| [Compiler](architecture/compiler.md) | Directive selection and prompt provenance |
+| [Claude Code](architecture/claude-code.md) | Native Plan activation and hook evidence |
+| [Codex](architecture/codex.md) | Prompt handoff, hook setup, and limitations |
+
+For maintenance, use [AGENTS.md](../AGENTS.md). For data handling and private
+reports, use [SECURITY.md](../SECURITY.md). CLI syntax is available through
+`ringframe --help` and each subcommand's `--help`.
