@@ -13,7 +13,7 @@ Paths below are relative to `.fab7/rf/`.
 | --- | --- |
 | `ledger.jsonl` | Append-only canonical JSON events |
 | `lock` | Advisory lock around the final append |
-| `asks/<ask_id>/source.txt` | Staged source intent |
+| `asks/<ask_id>/source.txt` | Published source intent for one candidate |
 | `asks/<ask_id>/prompt.txt` | Published prompt for one candidate |
 | `evals/<eval_id>/brief.json` | Open Asks and Git facts |
 | `evals/<eval_id>/intent.json` | Judged intent items |
@@ -73,3 +73,7 @@ characters. Use links and record fields for relationships, not ID parsing.
 
 CLI exit codes: `0` success, `1` usage error, `2` refusal or failed check,
 `3` needs input, `4` internal error. See [Security](../../SECURITY.md) for retained data.
+
+Implementation: [publication and verification](../../core/ringframe/store.py),
+[workspace initialization](../../core/ringframe/workspace.py), and
+[session captures](../../core/ringframe/sessions.py).

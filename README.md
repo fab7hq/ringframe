@@ -79,10 +79,9 @@ ringframe ledger verify --json
 
 ## Qualification limits
 
-Formal host qualification is incomplete. Earlier host results apply to their
-recorded artifacts; see the
-[Claude Code](https://github.com/fab7hq/ringframe/blob/main/docs/architecture/claude-code.md) and
-[Codex](https://github.com/fab7hq/ringframe/blob/main/docs/architecture/codex.md) notes for their scope.
+Formal host qualification is incomplete. The documentation describes the
+implemented CLI and intended skill behavior; it does not establish host
+reliability or improved results over a native workflow.
 
-See the [documentation](https://github.com/fab7hq/ringframe/blob/main/docs/README.md), [contributor instructions](https://github.com/fab7hq/ringframe/blob/main/AGENTS.md),
+See the [documentation](https://github.com/fab7hq/ringframe/blob/main/docs/product.md), [contributor instructions](https://github.com/fab7hq/ringframe/blob/main/AGENTS.md),
 and [security policy](https://github.com/fab7hq/ringframe/blob/main/SECURITY.md). Licensed under [Apache 2.0](https://github.com/fab7hq/ringframe/blob/main/LICENSE).

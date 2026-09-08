@@ -2,8 +2,9 @@
 
 Eval judges the current work against every open Ask and records `verdict` and
 `confidence`. Invoke `/rf:eval` in Claude Code or `$rf:eval` in Codex.
-The skill asks no questions and runs no project builds or tests. For Codex,
-use the [explicit delegation request](../architecture/codex.md#eval-delegation)
+The skill instructs the host to ask no questions and run no project builds or
+tests. These instructions do not sandbox the host. For Codex,
+use the [explicit delegation request](eval.md#native-delegation)
 when requesting four native judges.
 
 ```mermaid
@@ -44,12 +45,12 @@ The default subject is `HEAD` for a clean tree, otherwise the worktree:
 counts, earlier Evals sharing an Ask, and limitations. An existing unclosed
 Eval over the same Asks returns `eval.already_open`; continue with that ID.
 
-One intent judge produces `active`, `revised`, or `withdrawn` items traced to
-Asks. Three assessors (`coverage`, `drift`, `adversary`) each vote
+The skill requests one intent judge to produce `active`, `revised`, or
+`withdrawn` items traced to Asks. Three assessors (`coverage`, `drift`, `adversary`) each vote
 `yes`, `no`, or `unknown` on active items and classify every changed path as
-`required`, `consequence`, or `unexplained`. Judges write only their staged
-output files. Codex's fallback uses sequential passes marked `shared_context`
-when sub-agents are unavailable.
+`required`, `consequence`, or `unexplained`. Judges are instructed to write only
+their staged output files. Codex's fallback uses sequential passes marked
+`shared_context` when sub-agents are unavailable.
 
 `eval close` requires at least three judgement files bound to the brief digest,
 votes covering active items, and classifications covering changed paths. The
@@ -59,19 +60,46 @@ judges or prove that their contexts were separate.
 | Verdict | Aggregation rule |
 | --- | --- |
 | `aligned` | All active items resolve to `yes`, with no unexplained path. |
-| `drifted` | An item resolves to `no`, or a path resolves to `unexplained`. |
+| `drifted` | With active items, an item resolves to `no`, or a path resolves to `unexplained`. |
 | `incomplete` | No active items, unresolved item votes without a drift finding, or a subject that changed during Eval. |
 
 The output field `majority` uses the most frequent vote, even with more than
 three judges. Item ties resolve to `unknown`; path ties resolve to `unexplained`.
 Confidence is the lowest agreement among deciding questions, not a probability
-of correctness. A changed subject overrides the verdict to `incomplete`.
+of correctness. These are all active items and paths with a non-`required`
+result or judge disagreement. With none, confidence is `0.0`. No active items
+always yields `incomplete`; a changed subject also overrides the verdict to
+`incomplete`.
+
+## Native delegation
+
+The coordinator is the host agent executing the Eval skill. The skill asks it
+to spawn one intent judge, then three assessors together, collect their files,
+and submit them to `eval close`. The RingFrame CLI does not spawn agents.
+
+| Host | Skill instructions |
+| --- | --- |
+| [Claude Code](../../plugins/claude/skills/eval/SKILL.md) | Use `Agent` for the intent judge, then three foreground assessors. No shared-context fallback is specified. |
+| [Codex](../../plugins/codex/skills/eval/SKILL.md) | Use the exposed native sub-agent tool. Fall back to four sequential passes only if the tool is absent or explicitly reports unavailability; mark every pass `shared_context`. |
+
+In Codex, make the requested delegation explicit:
+
+```text
+$rf:eval — explicitly use four native sub-agents for this evaluation.
+```
+
+This wording cannot grant a missing tool or guarantee spawning. The host owns
+permissions and delegation availability. A pending command or unread tool
+result is not evidence that delegation is unavailable.
 
 ## Records and CLI
 
 Each `evals/<eval_id>/` holds `brief.json`, `intent.json`, `judgement-<n>.json`,
 and `record.json`. The record includes votes, omission and commission findings,
 limitations, and a delta from the latest completed Eval sharing an Ask.
+The delta matches items by ID within the same Ask, then normalized text, then
+token overlap within the same Ask. This is a heuristic comparison, not proof
+that reworded obligations mean the same thing.
 The ledger records `eval.opened` and `eval.completed`.
 
 ```sh
@@ -81,5 +109,6 @@ ringframe eval close --eval <eval_id> --intent @intent.json \
 ringframe eval list --json
 ```
 
-Eval never blocks [Seal](seal.md). Its current skill behavior still needs
-host qualification; deterministic aggregation tests do not qualify model judgement.
+Eval never blocks [Seal](seal.md).
+
+Implementation: [brief, validation, and aggregation](../../core/ringframe/evaluate.py).

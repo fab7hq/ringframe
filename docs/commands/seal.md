@@ -9,7 +9,9 @@ Asks, including `deferred`. Seal does not merge, publish, deploy, or certify wor
 
 ## Decision and authority
 
-The skill confirms the disposition, open Ask titles, and Eval summary once.
+The skill is instructed to confirm the disposition, open Ask titles, and Eval
+summary once. The CLI records the supplied decision without independently
+verifying that host interaction.
 An optional note is recorded verbatim. The CLI defaults to the latest completed
 Eval that shares at least one open Ask, or no Eval if none exists. The receipt
 keeps the Eval ID so consumers can inspect its actual coverage.
@@ -19,6 +21,11 @@ An interactive human actor is accepted as declared. Other actors need a local
 `authorizations/<actor_id>.json` grant matching their identity, disposition,
 and subject kind; an expiry is checked when supplied. These are caller-supplied
 identities and local grants, not host authentication.
+
+The [Claude skill](../../plugins/claude/skills/seal/SKILL.md) requests confirmation
+with `AskUserQuestion`. The [Codex skill](../../plugins/codex/skills/seal/SKILL.md)
+requires `request_user_input` and stops without creating a Seal if that tool is
+missing, its call is rejected, or the chooser is cancelled or unanswered.
 
 | Refusal code | Reason |
 | --- | --- |
@@ -49,3 +56,5 @@ Eval record digest. `fresh: true` and exit 0 mean those checks passed.
 digest. For a recorded Git commit, this checks that commit, not whether the
 current `HEAD` or worktree equals it. Downstream gates must choose and check
 their own acceptance conditions.
+
+Implementation: [receipt creation and checks](../../core/ringframe/seal.py).

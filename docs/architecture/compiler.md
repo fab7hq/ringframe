@@ -49,4 +49,6 @@ Rules. Catalog `matrix_ref` URLs and evidence identifiers are descriptive
 references; the CLI does not fetch them or require a documentation checkout.
 
 Candidate text and successful composition alone do not establish improvement over the
-native prompt baseline. [Eval](../product/eval.md) judges the resulting work.
+native prompt baseline. [Eval](../commands/eval.md) judges the resulting work.
+
+Implementation: [catalog selection and rendering](../../core/ringframe/deltas.py).
