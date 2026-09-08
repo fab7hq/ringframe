@@ -42,11 +42,13 @@ nobody edits.
    "votes":[{"item":"i1","vote":"yes|no|unknown","reason":"names the files"}],
    "drift":[{"path":"<changed path>","finding":"...","classification":"required|consequence|unexplained"}],
    "basis_notes":[],"commands_run":[]}`. Every `active` item gets exactly one
-   vote; `drift` covers every changed path in the brief. Angles:
+   vote; every judge, whatever its angle, classifies every changed path in
+   the brief (the CLI refuses a judgement that leaves one out). Angles:
    - `coverage`: is each active item met by the change? `yes` only when you
      can point at the files; `unknown` when the repository cannot tell you.
-   - `drift`: is each changed path `required` by an item, a reasonable
-     `consequence` of one, or `unexplained` by any Ask? Vote the items too.
+   - `drift`: lead with the paths: is each `required` by an item, a
+     reasonable `consequence` of one, or `unexplained` by any Ask? Vote the
+     items too.
    - `adversary`: assume the work is wrong; for each active item look for the
      missing case, the wrong behaviour, the untested claim. `no` only when you
      can point at the failure, else `unknown`; `yes` when you tried and found

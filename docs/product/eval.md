@@ -52,7 +52,8 @@ reason and classifies every changed path as `required`, `consequence`, or
 and `independence: sub_agent | shared_context`.
 
 `ringframe eval close` validates them (at least three judgements bound to the
-brief's digest, one vote per active item) and aggregates:
+brief's digest, one vote per active item, one classification per changed
+path from every judge) and aggregates:
 
 - per item: majority vote and agreement (share of judges in the majority);
 - per path: majority classification and agreement; paths no judge mentioned

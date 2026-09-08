@@ -210,7 +210,7 @@ def validate_intent(intent: dict, brief_sha256: str, ask_ids: list[str]) -> None
         _need(it.get("status") in ITEM_STATUS, code, f"items[{i}].status must be one of {ITEM_STATUS}")
 
 
-def validate_judgement(j: dict, brief_sha256: str, intent_sha256: str, items: list[dict], where: str) -> None:
+def validate_judgement(j: dict, brief_sha256: str, intent_sha256: str, items: list[dict], where: str, changed_paths: list[str] = ()) -> None:
     code = "eval.judgement"
     _need(isinstance(j, dict) and j.get("schema") == JUDGEMENT_SCHEMA, code, f"{where}: schema must be {JUDGEMENT_SCHEMA}")
     _need(j.get("brief_sha256") == brief_sha256, "eval.brief_mismatch", f"{where}: brief_sha256 is not this Eval's brief")
@@ -226,9 +226,13 @@ def validate_judgement(j: dict, brief_sha256: str, intent_sha256: str, items: li
         _need(v.get("vote") in VOTES, code, f"{where}.votes[{i}].vote must be one of {VOTES}")
         voted.add(v["item"])
     _need(active <= voted, code, f"{where}: no vote for active items {sorted(active - voted)}")
+    classified = set()
     for i, d in enumerate(j.get("drift", [])):
         _need(isinstance(d, dict) and isinstance(d.get("path"), str) and d["path"], code, f"{where}.drift[{i}].path missing")
         _need(d.get("classification") in CLASSIFICATIONS, code, f"{where}.drift[{i}].classification must be one of {CLASSIFICATIONS}")
+        classified.add(d["path"])
+    missing = [p for p in changed_paths if p not in classified]
+    _need(not missing, code, f"{where}: no drift classification for changed paths {missing}")
     for k in ("basis_notes", "commands_run"):
         _need(isinstance(j.get(k, []), list), code, f"{where}.{k} must be a list")
 
@@ -256,8 +260,8 @@ def _aggregate(items: list[dict], judgements: list[dict], changed_paths: list[st
             by_path.setdefault(d["path"], []).append({"angle": j["judge"]["angle"], "classification": d["classification"], "finding": d.get("finding", "")})
     paths = []
     for path in sorted(by_path):
-        # A judge silent on a path found nothing there: it counts as `required`, so one loud judge cannot make a
-        # finding unanimous. Agreement is always over every judge.
+        # Every judge classifies every changed path (validated); a judge silent on a path outside the brief counts as
+        # `required` there, so one loud judge cannot make a finding unanimous. Agreement is always over every judge.
         votes = [f["classification"] for f in by_path[path]] + ["required"] * (len(judgements) - len(by_path[path]))
         maj, agr = _majority(votes, "unexplained")
         paths.append({"path": path, "classification": maj, "agreement": round(agr, 2), "mentions": len(by_path[path]), "findings": by_path[path]})
@@ -309,8 +313,9 @@ def close_eval(ws: Workspace, eval_id: str, *, intent: dict, judgements: list[di
     validate_intent(intent, brief_sha, ask_ids)
     intent_bytes = store.canonical(intent) + b"\n"
     intent_sha = digest.sha256_bytes(intent_bytes)
+    changed_paths = [f["path"] for f in brief["changes"]["files"]]
     for n, j in enumerate(judgements, 1):
-        validate_judgement(j, brief_sha, intent_sha, intent["items"], f"judgement[{n}]")
+        validate_judgement(j, brief_sha, intent_sha, intent["items"], f"judgement[{n}]", changed_paths)
     subject = brief["subject"]
     now_digest = subject_digest(ws, subject["kind"], subject["ref"])
     limitations = [f"the verdict is a judgement by {len(judgements)} sub-agents; agreement is its confidence, nothing here is certain",

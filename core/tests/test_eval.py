@@ -36,10 +36,16 @@ def intent(brief_sha, items):
     return {"schema": "ringframe.eval-intent/1", "brief_sha256": brief_sha, "judge": {**JUDGE, "angle": "intent"}, "items": items}
 
 
-def judgement(brief_sha, angle, votes: dict, drift: dict | None = None, **extra):
+CHANGED = ("docs/notes.md", "src/uptime.js", "tests/uptime.test.js")  # the work commit of two_asks_and_work
+
+
+def judgement(brief_sha, angle, votes: dict, drift: dict | None = None, paths=CHANGED, **extra):
+    """Every changed path classified (`required` unless the test says otherwise), as the CLI demands of every judge."""
+    full = {p: "required" for p in paths}
+    full.update(drift or {})
     return {"schema": "ringframe.eval-judgement/1", "brief_sha256": brief_sha, "judge": {**JUDGE, "angle": angle},
             "votes": [{"item": k, "vote": v, "reason": f"{angle} says {v}"} for k, v in votes.items()],
-            "drift": [{"path": p, "finding": "seen", "classification": c} for p, c in (drift or {}).items()], **extra}
+            "drift": [{"path": p, "finding": "seen", "classification": c} for p, c in full.items()], **extra}
 
 
 def two_asks_and_work(repo):
@@ -169,6 +175,8 @@ def test_close_validates_judgements(repo):
         evaluate.close_eval(ws, eid, intent=intent(sha_b, items), judgements=[good("a"), good("b"), judgement(sha_b, "c", {})])
     with pytest.raises(LedgerError, match="eval.judgement"):
         evaluate.close_eval(ws, eid, intent=intent(sha_b, items), judgements=[good("a"), good("b"), judgement(sha_b, "c", {"i1": "yes"}, {"docs/notes.md": "fine"})])
+    with pytest.raises(LedgerError, match="no drift classification for changed paths"):
+        evaluate.close_eval(ws, eid, intent=intent(sha_b, items), judgements=[good("a"), good("b"), judgement(sha_b, "c", {"i1": "yes"}, paths=("src/uptime.js",))])
     with pytest.raises(LedgerError, match="eval.judgement"):
         bad = good("c"); bad["judge"] = {"host": "x", "angle": "c", "independence": "telepathy"}
         evaluate.close_eval(ws, eid, intent=intent(sha_b, items), judgements=[good("a"), good("b"), bad])
@@ -216,7 +224,7 @@ def test_close_drifted_reports_disagreement_as_confidence(repo):
     assert {it["id"]: (it["majority"], it["agreement"]) for it in rec["items"]} == {"i1": ("yes", 0.67), "i2": ("no", 0.67)}
     assert rec["drift"]["omission"] == ["i2"]
     assert rec["drift"]["commission"] == [{"path": "docs/notes.md", "classification": "unexplained", "agreement": 0.67}]
-    assert rec["drift"]["unmentioned"] == ["tests/uptime.test.js"]
+    assert rec["drift"]["unmentioned"] == []
     assert any("sub-agents" in l for l in rec["limitations"])
 
 
@@ -243,7 +251,7 @@ def test_one_loud_judge_cannot_make_a_path_unanimous(repo):
     js = [judgement(sha_b, "coverage", {"i1": "yes"}), judgement(sha_b, "drift", {"i1": "yes"}), judgement(sha_b, "adversary", {"i1": "yes"}, {"docs/notes.md": "unexplained"})]
     rec = evaluate.close_eval(ws, out["eval_id"], intent=intent(sha_b, items), judgements=js)
     docs = next(p for p in rec["drift"]["paths"] if p["path"] == "docs/notes.md")
-    assert docs == {"path": "docs/notes.md", "classification": "required", "agreement": 0.67, "mentions": 1, "findings": docs["findings"]}
+    assert docs == {"path": "docs/notes.md", "classification": "required", "agreement": 0.67, "mentions": 3, "findings": docs["findings"]}
     assert rec["drift"]["commission"] == [] and rec["verdict"] == "aligned" and rec["confidence"] == 0.67
     # two of three flagging it is a finding, at their agreement
     out2 = evaluate.open_eval(ws)
@@ -289,7 +297,7 @@ def test_second_eval_follows_the_first_and_reports_the_delta(repo):
     # the second intent judge numbers the items differently; matching is by text
     items2 = [{"id": "x1", "text": "Test the endpoint", "ask_id": a, "status": "active"}, {"id": "x2", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
     second = evaluate.close_eval(ws, out2["eval_id"], intent=intent(sha_b2, items2),
-                            judgements=[judgement(sha_b2, ang, {"x1": "yes", "x2": "yes"}, {"src/uptime.js": "required", "tests/uptime.test.js": "required"}) for ang in ("coverage", "drift", "adversary")])
+                            judgements=[judgement(sha_b2, ang, {"x1": "yes", "x2": "yes"}, paths=("src/uptime.js", "tests/uptime.test.js")) for ang in ("coverage", "drift", "adversary")])
     assert second["verdict"] == "aligned" and second["follows"] == first["eval_id"]
     assert second["delta"]["closed"] == ["test the endpoint"] and second["delta"]["opened"] == []
     assert second["delta"]["commission_removed"] == ["docs/notes.md"] and second["delta"]["commission_added"] == []

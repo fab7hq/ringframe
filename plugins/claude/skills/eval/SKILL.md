@@ -61,13 +61,15 @@ the files as they are now), then writes
  "commands_run":[]}
 ~~~
 
-Every `active` item gets exactly one vote. `drift` covers every changed path
-in the brief. The angles:
+Every `active` item gets exactly one vote. Every judge, whatever its angle,
+classifies every changed path in the brief (`required`, `consequence`, or
+`unexplained`); the CLI refuses a judgement that leaves a path out. The
+angles:
 
 - `coverage`: for each active item, is it met by the change? `yes` only when
   you can point at the files; `unknown` when you cannot tell from the
   repository.
-- `drift`: for each changed path, is the change `required` by an item, a
+- `drift`: lead with the paths: is each change `required` by an item, a
   reasonable `consequence` of one, or `unexplained` by any Ask? Vote the
   items too, from what the diff shows.
 - `adversary`: assume the work is wrong. For each active item look for the
