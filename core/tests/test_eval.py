@@ -116,6 +116,16 @@ def test_open_writes_a_facts_only_brief_over_the_open_asks(repo):
     assert len(listed) == 1 and listed[0]["state"] == "opened" and listed[0]["verdict"] is None
 
 
+def test_open_refuses_while_an_eval_over_the_same_asks_is_still_open(repo):
+    ws, a, b, sha, out, sha_b = opened(repo)
+    with pytest.raises(LedgerError, match="eval.already_open") as e:
+        evaluate.open_eval(ws)
+    assert out["eval_id"] in str(e.value.detail)
+    items = [{"id": "i1", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
+    evaluate.close_eval(ws, out["eval_id"], intent=intent(sha_b, items), judgements=[judgement(sha_b, ang, {"i1": "yes"}) for ang in ("coverage", "drift", "adversary")])
+    assert evaluate.open_eval(ws)["eval_id"] != out["eval_id"]  # closed: a new Eval may open
+
+
 def test_open_on_a_dirty_tree_takes_the_worktree_and_counts_untracked_files(repo):
     ws, a, b, sha = two_asks_and_work(repo)
     (repo / "src" / "uptime.js").write_text("export const uptime = () => 2;\nmore\n")

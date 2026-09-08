@@ -148,6 +148,10 @@ def open_eval(ws: Workspace, *, anchor: str | None = None, subject_kind: str | N
     except (subprocess.CalledProcessError, FileNotFoundError):
         raise LedgerError("eval.no_git", "Eval reads the Git delta; this workspace is not a Git repository") from None
     kind, ref = (subject_kind, subject_ref) if subject_kind else default_subject(ws)
+    ask_ids = [a["ask_id"] for a in asks]
+    dangling = [r for r in list_records(ws) if r["state"] == "opened" and r["basis"]["asks"] == ask_ids]
+    if dangling:
+        raise LedgerError("eval.already_open", f"{dangling[-1]['eval_id']} is open over the same Asks and not closed; close it or continue with it")
     anchor_d = _anchor(ws, asks, anchor)
     try:
         _git(ws.root, "rev-parse", "--verify", "--quiet", f"{anchor_d['ref']}^{{commit}}")

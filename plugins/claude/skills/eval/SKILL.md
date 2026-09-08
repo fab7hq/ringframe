@@ -25,7 +25,10 @@ Run `ringframe eval open --json`. Keep `eval_id`, `brief_path`, and
 files with line counts, and how many unrecorded prompts followed each Ask.
 Exit 2 `eval.no_open_ask`: report "nothing to evaluate: no open Ask" and
 stop. Exit 3 `eval.anchor_unknown`: report it and stop; the person can pass
-`--anchor <commit>` next time.
+`--anchor <commit>` next time. Exit 2 `eval.already_open`: an Eval over
+these Asks is open and unclosed; its id is in `detail`. Continue with that
+`eval_id` (its brief is under `.fab7/rf/evals/<eval_id>/brief.json`) instead
+of opening another. Run `eval open` once per Eval.
 
 ## 2. Intent (one sub-agent)
 
