@@ -152,8 +152,13 @@ def test_open_anchors_on_the_last_seal_when_one_exists(repo):
     assert out["anchor"] == {"kind": "seal", "ref": sha, "seal_id": "sel_old"}
     brief = json.loads((ws.rf_dir / out["brief"]["path"]).read_bytes())
     assert [f["path"] for f in brief["changes"]["files"]] == ["src/more.js"]
+    items = [{"id": "i1", "text": "More", "ask_id": a, "status": "active"}]
+    evaluate.close_eval(ws, out["eval_id"], intent=intent(out["brief"]["sha256"], items), judgements=[judgement(out["brief"]["sha256"], ang, {"i1": "yes"}, paths=("src/more.js",)) for ang in ("coverage", "drift", "adversary")])
     explicit = evaluate.open_eval(ws, anchor=sha2)
     assert explicit["anchor"]["kind"] == "explicit" and json.loads((ws.rf_dir / explicit["brief"]["path"]).read_bytes())["changes"]["files"] == []
+    with pytest.raises(LedgerError, match="eval.already_open"):
+        evaluate.open_eval(ws, anchor="0" * 40)  # the explicit one is still open
+    evaluate.close_eval(ws, explicit["eval_id"], intent=intent(explicit["brief"]["sha256"], items), judgements=[judgement(explicit["brief"]["sha256"], ang, {"i1": "yes"}, paths=()) for ang in ("coverage", "drift", "adversary")])
     with pytest.raises(LedgerError, match="eval.anchor_missing"):
         evaluate.open_eval(ws, anchor="0" * 40)
 

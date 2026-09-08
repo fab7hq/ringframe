@@ -87,7 +87,8 @@ ringframe eval close --eval <eval_id> --intent @<file> --judgement @<file> --jud
 ringframe eval list --json
 ~~~
 
-Refusals (exit 2): `eval.no_open_ask`, `eval.no_git`, `eval.anchor_missing`,
+Refusals (exit 2): `eval.no_open_ask`, `eval.already_open` (an unclosed Eval
+over the same Asks; its id is in the detail), `eval.no_git`, `eval.anchor_missing`,
 `eval.too_few_judges`, `eval.brief_mismatch`, `eval.intent`,
 `eval.judgement`, `eval.missing`, `ledger.immutable`. Exit 3
 `eval.anchor_unknown` when no Seal and no Ask provide an anchor.

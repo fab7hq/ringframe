@@ -20,7 +20,10 @@ nobody edits.
    `prompt_path`), the anchor commit, the subject, the changed files with line
    counts, and how many unrecorded prompts followed each Ask. Exit 2
    `eval.no_open_ask`: report "nothing to evaluate: no open Ask" and stop.
-   Exit 3 `eval.anchor_unknown`: report it and stop.
+   Exit 3 `eval.anchor_unknown`: report it and stop. Exit 2 `eval.already_open`:
+   an Eval over these Asks is open and unclosed; continue with the `eval_id`
+   in `detail` and its brief under `.fab7/rf/evals/<eval_id>/brief.json`. Run
+   `eval open` once per Eval.
 2. Intent, one sub-agent. Spawn a sub-agent (read-only) with `brief_path` and
    `brief.sha256`: read the brief and each Ask's `prompt.txt` in order; write
    the effective intent as numbered items, one obligation each, in the Asks'
