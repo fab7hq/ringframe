@@ -35,7 +35,11 @@ effective intent as numbered items, one obligation each, in the Asks' own
 words; when a later Ask changes an earlier obligation mark the earlier one
 `revised` (with the new text as a new `active` item) or `withdrawn` naming
 `by_ask_id`; never add an obligation no Ask states; unconfirmed Asks are
-context, not obligations. It writes `.fab7/rf/tmp/eval-<eval_id>-intent.json`:
+context, not obligations. When the brief lists `previous_evals`, read the
+latest one's `intent.json` under `.fab7/rf/evals/<eval_id>/` first and keep
+its item ids and wording for obligations that have not changed, so the new
+record's delta can match them; add, revise, or withdraw only what the Asks
+since then require. It writes `.fab7/rf/tmp/eval-<eval_id>-intent.json`:
 
 ~~~json
 {"schema":"ringframe.eval-intent/1","brief_sha256":"<brief.sha256>",

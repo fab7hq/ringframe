@@ -27,7 +27,10 @@ nobody edits.
    own words; when a later Ask changes an earlier obligation mark the earlier
    one `revised` (adding the new text as a new `active` item) or `withdrawn`
    naming `by_ask_id`; never add an obligation no Ask states; unconfirmed
-   Asks are context, not obligations. It writes
+   Asks are context, not obligations. When the brief lists `previous_evals`,
+   read the latest one's `intent.json` under `.fab7/rf/evals/<eval_id>/`
+   first and keep its item ids and wording for unchanged obligations, so the
+   delta can match them. It writes
    `.fab7/rf/tmp/eval-<eval_id>-intent.json` (under the workspace root):
    `{"schema":"ringframe.eval-intent/1","brief_sha256":"<brief.sha256>",
    "judge":{"host":"codex","model":"<model id>","angle":"intent","independence":"sub_agent"},

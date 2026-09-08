@@ -294,12 +294,12 @@ def test_second_eval_follows_the_first_and_reports_the_delta(repo):
     brief2 = json.loads((ws.rf_dir / out2["brief"]["path"]).read_bytes())
     assert brief2["previous_evals"] == [{"eval_id": first["eval_id"], "verdict": "drifted", "confidence": 1.0, "time": first["time"]}]
     assert [f["path"] for f in brief2["changes"]["files"]] == ["src/uptime.js", "tests/uptime.test.js"]  # docs/notes.md no longer differs from the anchor
-    # the second intent judge numbers the items differently; matching is by text
-    items2 = [{"id": "x1", "text": "Test the endpoint", "ask_id": a, "status": "active"}, {"id": "x2", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
+    # the second intent judge numbers the items differently and rewords one; matching falls back to text, then token overlap
+    items2 = [{"id": "x1", "text": "Test the uptime endpoint with a unit test", "ask_id": a, "status": "active"}, {"id": "x2", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
     second = evaluate.close_eval(ws, out2["eval_id"], intent=intent(sha_b2, items2),
                             judgements=[judgement(sha_b2, ang, {"x1": "yes", "x2": "yes"}, paths=("src/uptime.js", "tests/uptime.test.js")) for ang in ("coverage", "drift", "adversary")])
     assert second["verdict"] == "aligned" and second["follows"] == first["eval_id"]
-    assert second["delta"]["closed"] == ["test the endpoint"] and second["delta"]["opened"] == []
+    assert second["delta"]["closed"] == ["Test the uptime endpoint with a unit test"] and second["delta"]["opened"] == [] and second["delta"]["new_items"] == []
     assert second["delta"]["commission_removed"] == ["docs/notes.md"] and second["delta"]["commission_added"] == []
     assert {"rel": "supersedes", "id": first["eval_id"]} in store.events(ws)[-1]["links"]
     assert [r["eval_id"] for r in evaluate.list_records(ws)] == [first["eval_id"], second["eval_id"]]

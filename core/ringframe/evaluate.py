@@ -287,15 +287,49 @@ def _norm(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+def _tokens(text: str) -> set:
+    return {w for w in re.findall(r"[a-z0-9_]+", text.lower()) if len(w) > 2}
+
+
+def _match(item: dict, candidates: list[dict]) -> dict | None:
+    """The previous item this one continues: same id and Ask, else same normalized text, else the best token overlap
+    (Jaccard >= 0.5) within the same Ask. Judges reword; the record says how each match was made."""
+    same_ask = [c for c in candidates if c.get("ask_id") == item.get("ask_id")]
+    for c in same_ask:
+        if c["id"] == item["id"]:
+            return c
+    for c in candidates:
+        if _norm(c["text"]) == _norm(item["text"]):
+            return c
+    a = _tokens(item["text"])
+    best, score = None, 0.0
+    for c in same_ask:
+        b = _tokens(c["text"])
+        j = len(a & b) / len(a | b) if a | b else 0.0
+        if j > score:
+            best, score = c, j
+    return best if score >= 0.5 else None
+
+
 def _delta(current: dict, previous: dict | None) -> dict | None:
     if previous is None:
         return None
-    met = lambda rec: {_norm(it["text"]) for it in rec["items"] if it["majority"] == "yes"}
-    unmet = lambda rec: {_norm(it["text"]) for it in rec["items"] if it["majority"] != "yes"}
+    prev_items = list(previous["items"])
+    closed, opened, new = [], [], []
+    for it in current["items"]:
+        before = _match(it, prev_items)
+        if before is None:
+            new.append(it["text"])
+            if it["majority"] != "yes":
+                opened.append(it["text"])
+        elif it["majority"] == "yes" and before["majority"] != "yes":
+            closed.append(it["text"])
+        elif it["majority"] != "yes" and before["majority"] == "yes":
+            opened.append(it["text"])
     paths = lambda rec: {c["path"] for c in rec["drift"]["commission"]}
-    return {"closed": sorted(met(current) & unmet(previous)), "opened": sorted(unmet(current) - unmet(previous)),
+    return {"closed": sorted(closed), "opened": sorted(opened), "new_items": sorted(new),
             "commission_removed": sorted(paths(previous) - paths(current)), "commission_added": sorted(paths(current) - paths(previous)),
-            "matching": "items matched by normalized text; a reworded item counts as new"}
+            "matching": "items matched to the previous Eval by id within the same Ask, then normalized text, then token overlap >= 0.5 within the same Ask"}
 
 
 def close_eval(ws: Workspace, eval_id: str, *, intent: dict, judgements: list[dict], actor: dict | None = None) -> dict:
