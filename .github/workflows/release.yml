@@ -25,7 +25,31 @@ jobs:
           uv run --python 3.14 --locked pytest
           git diff --check
       - run: uv build --python 3.14
+      - name: Check release identities and metadata
+        run: |
+          uv run --python 3.14 --locked python .github/scripts/check_release.py dist
+          uvx --from twine twine check --strict dist/*
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-dists
-          path: dist/
+          path: |
+            dist/
+            SHA256SUMS
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/ringframe/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dists
+      - name: Verify distribution checksums
+        run: sha256sum --check SHA256SUMS
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1

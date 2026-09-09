@@ -50,6 +50,9 @@ on hosts offering `default_mode_request_user_input`, you can enable that
 feature with `codex features enable default_mode_request_user_input`.
 RingFrame does not change host settings.
 
+Upgrade the CLI and both installed host plugins together. Plugin installation
+does not enable automatic updates; use your host's marketplace/plugin update flow.
+
 ## Use
 
 Open your project in the host and invoke the skills explicitly:
