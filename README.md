@@ -18,7 +18,7 @@ default.
 Requires Python 3.11+, uv, Git, and a POSIX environment (macOS or Linux).
 Install the CLI first, then choose your host plugin.
 
-After the first PyPI publication, install the latest release:
+Install the latest release:
 
 ```sh
 uv tool install ringframe

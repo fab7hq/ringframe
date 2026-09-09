@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-Security fixes target the latest 0.0.x release once published. Before the first
-release, include the source commit when reporting an issue.
+Security fixes target the latest 0.0.x release. For unreleased changes, include
+the source commit when reporting an issue.
 
 ## Report privately
 
