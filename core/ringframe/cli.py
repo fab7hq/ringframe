@@ -67,13 +67,13 @@ def _hoist_globals(argv):
 def build_parser() -> argparse.ArgumentParser:
     p = _Parser(prog="ringframe", description=__doc__)
     p.add_argument("--version", action="version", version=f"ringframe {__version__}")
-    p.add_argument("--workspace", type=Path, help="workspace root (default: git worktree root or cwd)")
+    p.add_argument("--workspace", type=Path, help="project root (default: current directory; hook payload cwd for hooks)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--actor", help="kind:id, default human:local-user")
     p.add_argument("--authority", choices=["interactive", "preauthorized"], default="interactive")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("init")
+    sub.add_parser("init").add_argument("--global", dest="global_init", action="store_true", help="initialize global delta catalogs only")
 
     prof = sub.add_parser("profile").add_subparsers(dest="sub", required=True)
     ps = prof.add_parser("show")
@@ -166,11 +166,23 @@ def _session_of(rec):
     return rec.get("session_id")
 
 
+def _hook_workspace(ns, ws, payload):
+    cwd = payload.get("cwd")
+    if ns.workspace is None and isinstance(cwd, str) and cwd:
+        path = Path(cwd)
+        if not path.is_absolute() or not path.is_dir():
+            raise ValueError("hook cwd must be an existing absolute directory")
+        return workspace.resolve(cwd=path)
+    return ws
+
+
 def _dispatch(ns, ws) -> tuple[int, object]:
     actor = _actor(ns.actor, ns.authority)
     if ns.cmd == "init":
+        if ns.global_init:
+            return 0, workspace.initialize_user()
         ws.ensure()
-        return 0, {"rf_dir": str(ws.rf_dir), **ws.describe()}
+        return 0, {"rf_dir": str(ws.rf_dir), "rt_dir": str(ws.rt_dir), **ws.describe()}
     if ns.cmd == "profile":
         prof = profiles.for_host({"name": ns.host, "version": ns.host_version})
         name = prof["host"] or "unknown"
@@ -190,7 +202,9 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         if ns.sub == "delivery":
             if ns.from_hook:
                 try:
-                    rec = ask.delivery_from_hook(ws, json.load(sys.stdin))
+                    payload = json.load(sys.stdin)
+                    ws = _hook_workspace(ns, ws, payload)
+                    rec = ask.delivery_from_hook(ws, payload)
                 except Exception as exc:  # a hook must never fail the host turn
                     return 0, {"recorded": False, "error": str(exc)}
                 return 0, {"recorded": rec is not None, **(rec or {})}
@@ -212,8 +226,9 @@ def _dispatch(ns, ws) -> tuple[int, object]:
             if ns.effective:
                 return 0, deltas.effective(ws, ns.domain)
             hosts = [ns.host] if ns.host else deltas.host_catalog_names()
-            entries = [e for h in hosts for e in deltas.load_host_catalog(h)["entries"] if not ns.capability or e["capability"] == ns.capability]
-            return 0, {"host": entries, "practice": deltas.load_practice_catalog(ns.domain)["entries"]}
+            entries = [e for h in hosts for e in deltas.load_host_catalog(h, ws)["entries"] if not ns.capability or e["capability"] == ns.capability]
+            catalog = deltas.load_practice_catalog(ns.domain, ws)
+            return 0, {"host": entries, "practice": catalog["entries"], "concerns": catalog["concerns"]}
         prof = profiles.for_host({"name": ns.host, "version": ns.host_version})
         rendered = deltas.render(ws, prof, ns.capability, _json_arg(ns.classification), statuses=tuple(ns.statuses.split(",")))
         return 0, rendered if ns.json else rendered["text"]
@@ -233,7 +248,9 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         return (0 if not findings else 2), {"findings": findings, "clean": not findings}
     if ns.cmd == "sessions":
         if ns.sub == "capture":
-            rec = sessions.capture(ws, ns.host, json.load(sys.stdin), host_version=ns.host_version)
+            payload = json.load(sys.stdin)
+            ws = _hook_workspace(ns, ws, payload)
+            rec = sessions.capture(ws, ns.host, payload, host_version=ns.host_version)
             submission = None
             if rec and "prompt" not in rec:
                 try:

@@ -1,124 +1,152 @@
 ---
 name: ask
-description: Turn one explicit intent into a confirmed, persisted prompt for a native Codex capability and hand it to the person to submit.
+description: Turn one explicit intent into a confirmed, persisted prompt and deliver it through the selected native capability.
 ---
 
-You are running RingFrame Ask inside Codex. RingFrame understands Codex's
-native capabilities; Codex understands the project; the person supplies and
-approves the intent, and on Codex the person also submits the prompt.
-
-Requires the `ringframe` CLI on PATH and the native `request_user_input`
-tool available in this turn. If the tool is unavailable, stop before compiling
-and explain that native confirmation is required. On hosts exposing
-`default_mode_request_user_input`, the person can enable it with
-`codex features enable default_mode_request_user_input`; otherwise use a host
-mode that exposes the tool. Do not change host settings or confirm through
-ordinary chat. If the host rejects the confirmation call, stop without
-recording confirmation or continuing the work.
+You are running RingFrame Ask inside Codex. The person supplies and
+approves the intent; the host owns task execution. Requires the `ringframe` CLI
+on PATH. Native confirmation and delivery follow the profile in section 1.
 
 The exact source intent is the text after `$rf:ask` in the person's message.
-Treat it as immutable.
 
-## Rules for the whole turn
+## Ask boundaries
 
-- Do not inspect the workspace, research, or run any command other than
-  `ringframe …` before the person confirms.
+- Before confirmation, use tools only to read the profile and directives, stage
+  and compile the candidate, read its rendered prompt, and show native
+  confirmation. Do not inspect project files, research, or begin the work.
 - Preserve the source intent exactly. Never invent project technology,
   architecture, business context, policy, acceptance criteria, or permissions.
-- Shell is for `ringframe` only: exactly one plain `ringframe …` command per
-  call, no `&&`, `;`, pipes, `cd`, `mkdir`, `which`, or `codex --version`.
-- Never claim the person submitted anything. RingFrame records submission only
-  when its hook observes it or the person attests it.
+- For Ask preparation and ledger commands, run exactly one plain `ringframe …`
+  command per shell call: no `&&`, `;`, pipes, `cd`, `mkdir`, `which`,
+  `command -v`, or host version probes. Use the host's file-writing tool to stage
+  inputs. Confirmed task execution follows the selected profile and normal
+  host permissions.
+- If `ringframe` is not found, stop and tell the person to run
+  `uv tool install ringframe`; never write ledger records by hand.
+- Never print classification labels, `NEXT_COMMAND`, or compiler protocol.
+  Show the stored prompt through confirmation and delivery as described below.
+  Never claim activation or submission without the corresponding evidence.
 
-## 1. Route
+## 1. Read the profile and route
 
-Classify only what routing needs (task, result, interaction, horizon,
-effects). Codex capabilities in this profile:
+Run `ringframe profile show --host codex --json`. This is the routing
+authority: read `routing.guidance`, `routing.precedence`, and each capability's
+`selection`, `effects`, `confirmation`, `activation`, `delivery_mode`,
+`continuation`, and `limitations`. Do not read research files or maintain a
+separate list of capabilities in the skill.
 
-- `native_plan`: any intent with `write`, `execute`, or `external_effect`
-  effects, unless the intent itself says to skip planning. `prompt.txt` must
-  begin with `/plan ` followed by the compiled prompt; the person enters it.
-- `native_goal`: only when the intent is a continuing objective with a
-  terminal condition. `prompt.txt` must begin with `/goal ` and stay under
-  4000 characters.
-- `native_direct`: read-only or answer-only intents, or an explicit request to
-  act now (`"explicit_direct_request": true` in `--route`). Work continues in
-  this turn.
+Classify the source intent's task, desired result, interaction, horizon, and
+effects. Compare the returned capabilities using their selection guidance and
+precedence; the user does not need to know or name a native command. Select
+only an ID returned by this profile. Preserve explicit constraints and explain
+material uncertainty in the route gaps rather than inventing requirements.
+If the selected capability has `requires_explicit_request_for_effects`, set
+`explicit_direct_request` to true only when the source itself requests immediate
+execution or skipping planning; otherwise choose a fitting alternative.
 
-## 2. Compile and persist before asking
+Use the selected capability's `confirmation.tool`. Check it is available before
+compiling. Missing or rejected native confirmation stops this Ask without
+confirming or continuing; do not substitute ordinary chat or change host settings.
+
+If concerns are relevant, run `ringframe deltas list --host codex --json`
+and use its merged `concerns` vocabulary to classify them. Otherwise omit
+concerns. The CLI reads the global and project delta files; project values win.
+
+Use these JSON shapes for `--classification` and `--route`. Replace example
+values and angle-bracket placeholders with this intent's classification and
+route explanation; lists stay lists and strings stay strings.
+
+```json
+{"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}
+```
+
+`task` items come from `question research clarify plan implement diagnose review
+operate document`; `result` is one of `answer plan workspace_change evidence
+continuing_objective`; `interaction` is `interactive` or `approval_gated`;
+`horizon` is `one_turn`, `session`, or `persistent`; `effects` items come from
+`read write execute external_effect`. Optional `concerns` is a list of names
+from the merged vocabulary above; omit it when none applies.
+
+```json
+{"fits": "<why this capability fits>", "alternatives": [{"capability": "<alternative profile capability ID>", "reason": "<why it fits less well>"}], "continuation": "<what happens after confirmation>", "effects": "<effects in words>", "gaps": [], "explicit_direct_request": false}
+```
+
+Use an empty `alternatives` list if no alternative applies. Do not guess a host
+version or session ID: the CLI resolves them from the plugin hook's capture.
+
+## 2. Compose and persist before asking
 
 1. Run `ringframe deltas render --host codex --capability <id>
-   --classification '<json>' --json` with the classification below. The CLI
+   --classification '<json>' --json` with the classification above. The CLI
    selects the directives that apply to this Ask (`host.entries`,
    `practice.entries`); you never choose, drop, or add rules.
-2. Under the project workspace root (the current working directory), never
-   under this skill's directory, write `.fab7/rf/tmp/stage-<nonce>/source.txt` (exact intent) and
-   `.fab7/rf/tmp/stage-<nonce>/composed.txt` in two parts. First, one brief
-   for this task, the way a senior engineer briefs a peer: start from the
-   exact intent and name the artifacts, paths, and constraints it names; add
-   nothing else. Then a line `Rules:` followed by one line per supplied
-   directive you apply: `- <label>: <that directive applied to this task's
-   specifics>`, using the `label` values the CLI returned (several labels may
-   share one line when one sentence applies them together). Every label must
-   come from the supplied set; the CLI refuses unknown labels and records
-   which supplied directives you applied or omitted. Do not restate a
-   directive generically or explain a principle. Do not add the `/plan ` or
-   `/goal ` prefix: the CLI adds it.
-3. Only after both files exist, run one command:
+2. Write the prompt in two parts. First, one brief for this task, the way a
+   senior engineer briefs a peer: start from the exact source intent and name
+   the artifacts, paths, and constraints it names; add nothing else. Then a
+   line `Rules:` followed by one line per supplied directive you apply:
+   `- <label>: <that directive applied to this task's specifics>`, using the
+   `label` values the CLI returned (several labels may share one line when
+   one sentence applies them together). Every label must come from the
+   supplied set; the CLI refuses unknown labels and records which supplied
+   directives you applied or omitted. Do not restate a directive generically
+   or explain a principle. Do not add a command prefix: the CLI adds it.
+3. Under the project workspace root (the current working directory), never
+   under this skill's directory, write `.fab7/rf/tmp/stage-<nonce>/source.txt`
+   with the exact source intent and `.fab7/rf/tmp/stage-<nonce>/composed.txt`
+   with only the composed prompt. Persist the candidate before showing the
+   chooser so its record exists even if the turn ends early.
+4. Only after both files exist, run
    `ringframe ask compile --staged <dir> --title "<short title>"
    --capability <id> --classification '<json>' --route '<json>' --host
-   '{"name":"codex","surface":"native-tui"}' --json`. Keep the returned
-   `ask_id`. If it exits non-zero, read the `error` and `detail`, fix that one
-   thing, and run it again; never run `--help`.
-
-   `--classification` has exactly these keys and shapes (lists stay lists,
-   strings stay strings):
-
-   ~~~json
-   {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]}
-   ~~~
-
-   `concerns` is optional: a list from `api_surface auth data_migration
-   concurrency performance refactor dependency_change ui cli tests_only
-   operate` naming what the intent touches; omit it when none applies.
-
-   `task` items from `question research clarify plan implement diagnose review
-   operate document`; `result` one of `answer plan workspace_change evidence
-   continuing_objective`; `interaction` one of `interactive approval_gated`;
-   `horizon` one of `one_turn session persistent`; `effects` items from `read
-   write execute external_effect`.
-
-   `--route` has exactly these keys:
-
-   ~~~json
-   {"fits": "<why this capability fits>", "alternatives": [{"capability": "native_direct", "reason": "<why not>"}], "continuation": "<what happens after confirmation>", "effects": "<effects in words>", "gaps": [], "explicit_direct_request": false}
-   ~~~
+   '{"name":"codex","surface":"native-tui"}' --json`.
+   Keep the returned `ask_id`. On a reported input-validation error, correct
+   that input without changing the source intent and retry. If the same error
+   recurs, the cause is unclear, or the failure is not input validation, show
+   the error and stop. Never confirm a failed compile.
 
 ## 3. Confirm with the native tool
 
-First run `ringframe ask copy --ask <ask_id>` to obtain the rendered prompt
-verbatim (the CLI rendered it from the staged candidate; never retype
-or summarise it). Then call `request_user_input` with one question, `id:
-"route"`, whose text names the selected capability, why it fits, why the
-alternatives do not, what will happen next, and includes that complete
-rendered prompt. Options: `Proceed
-(Recommended)`, `Use direct execution` (or `Plan first`), `Cancel`. Free text
-is a revision: compile again with `--link revises:<ask_id>` and ask again.
+Run `ringframe ask copy --ask <ask_id>` to obtain the complete rendered prompt
+verbatim; never retype or summarise it. Call the selected capability's
+confirmation tool with one single-select question. Explain the selected
+capability, why it fits, why the alternatives fit less well, and the expected
+continuation and effects. Offer `Proceed (Recommended)`, the most relevant
+alternative returned by the profile if one applies, and `Cancel`.
+
+For `request_user_input`, use question `id: "route"` and header `Ask route`.
+Include the complete rendered prompt in the question text. Say the person may
+type a revision or select another route.
+
+A different route or free-text revision means stage and compile a new candidate
+with `--link revises:<previous ask_id>`, then ask again. Every candidate shown
+is persisted; only the last one is confirmed.
 
 ## 4. Record the answer and deliver
 
-- Proceed: `ringframe ask confirm --ask <ask_id> --json`. Then, for
-  `native_plan` or `native_goal`, run `ringframe ask delivery --ask <ask_id>
-  --handoff` and show its output verbatim: the person opens `prompt.txt` and
-  submits its contents in the Codex composer. For `native_direct`, continue
-  with the intent under normal permissions.
-- Cancel: `ringframe ask cancel --ask <ask_id> --reason "<why>" --json`, then
-  stop.
-- No answer (the chooser was dismissed, timed out, or returned nothing):
-  `ringframe ask cancel --ask <ask_id> --reason "chooser dismissed" --json`,
-  tell the person the Ask was cancelled, and stop. Never continue with the
-  intent, plan, or hand off without a recorded answer.
+- Proceed: run `ringframe ask confirm --ask <ask_id> --json`. Deliver only
+  after that command succeeds.
+- Cancel: run `ringframe ask cancel --ask <ask_id> --reason "<why>" --json`
+  and stop.
+- No answer (dismissed, timed out, or empty): run
+  `ringframe ask cancel --ask <ask_id> --reason "chooser dismissed" --json`
+  and stop. Report cancellation only if the command succeeds. Never interpret
+  a missing answer as approval.
+
+After successful confirmation, use the selected capability's delivery fields:
+
+- `human_handoff`: run `ringframe ask delivery --ask <ask_id> --handoff`
+  and show its output verbatim. The person submits the stored prompt.
+- `native_dispatch` with an `activation.tool`: call that tool, then follow
+  the profile's continuation with the confirmed prompt as the brief. Claim
+  activation only from its result and the profile's receipt mechanism; never
+  invent a receipt. If activation fails, record
+  `ringframe ask delivery --ask <ask_id> --state delivery_failed --reason "<error>"`,
+  then run `ringframe ask delivery --ask <ask_id> --handoff` and show its output
+  verbatim. Stop if recording the failure fails.
+- `native_dispatch` without an activation tool: continue in this turn using
+  the confirmed prompt under normal host permissions. Record nothing else.
 
 Submission is `observed` only when the prompt hook matches the compiled input.
 `ringframe ask submitted --ask <ask_id>` records the person's attestation as
-`attributed`, not host-observed submission.
+`attributed`; use it only when the person actually attests submission. A handoff
+alone does not establish submission.

@@ -319,3 +319,22 @@ def test_second_eval_follows_the_first_and_reports_the_delta(repo):
     assert {"rel": "supersedes", "id": first["eval_id"]} in store.events(ws)[-1]["links"]
     assert [r["eval_id"] for r in evaluate.list_records(ws)] == [first["eval_id"], second["eval_id"]]
     assert evaluate.latest_for(ws, [a])["eval_id"] == second["eval_id"] and evaluate.latest_for(ws, ["ask_other"]) is None
+
+
+def test_nested_project_eval_excludes_siblings(repo):
+    anchor = commit(repo, {"test/app.py": "old\n", "sibling.py": "old\n"})
+    ws = workspace.resolve(explicit=repo / "test").ensure()
+    before = evaluate.subject_digest(ws, "git_commit", anchor)
+    sibling_commit = commit(repo, {"sibling.py": "new\n"})
+    assert evaluate.subject_digest(ws, "git_commit", sibling_commit) == before
+    (repo / "sibling.py").write_text("dirty sibling\n")
+    assert evaluate.default_subject(ws)[0] == "git_commit"
+    (repo / "test/app.py").write_text("new\n")
+    changes = evaluate._changes(ws, anchor, {"kind": "worktree", "ref": str(ws.root)})
+    assert [f["path"] for f in changes["files"]] == ["app.py"]
+    assert changes["total_added"] == 1 and changes["total_removed"] == 1
+
+    project_commit = commit(repo, {"test/app.py": "committed change\n"})
+    assert evaluate.subject_digest(ws, "git_commit", project_commit) != before
+    committed = evaluate._changes(ws, anchor, {"kind": "git_commit", "ref": project_commit})
+    assert [f["path"] for f in committed["files"]] == ["app.py"]

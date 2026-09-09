@@ -33,7 +33,7 @@ def test_host_deltas_render_only_when_qualified_by_default(repo):
 
 
 def test_practice_selection_is_faceted_tiered_and_budgeted(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # user layer lives at ~/.fab7/rf/deltas.yaml
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # each test has isolated global delta catalogs
     ws = workspace.resolve(cwd=repo).ensure()
     prof = profiles.load("codex")
     plain = deltas.render(ws, prof, "native_plan", IMPL)
@@ -60,14 +60,14 @@ def test_user_and_workspace_layers_override_by_id(repo, monkeypatch, tmp_path):
         "  - id: practice.kiss\n    text: Keep it plain.\n"
         "  - id: practice.team.commit_style\n    tier: core\n    applies_to: {task: [implement]}\n    text: One commit per item, message names the item.\n")
     ws = workspace.resolve(cwd=repo).ensure()
-    (ws.rf_dir / "deltas.yaml").write_text("schema: ringframe.deltas/1\nscope: practice\nentries:\n  - id: practice.yagni\n    enabled: false\n")
+    (ws.root / ".fab7/rt/deltas/practice/software-development.yaml").write_text("schema: ringframe.deltas/1\nscope: practice\nentries:\n  - id: practice.yagni\n    enabled: false\n")
     r = deltas.render(ws, profiles.load("codex"), "native_plan", IMPL)
     assert "Keep it plain." in r["text"] and "practice.yagni" not in r["practice"]["selected"]
     assert "practice.team.commit_style" in r["practice"]["selected"]
-    layers = [(l["root"], l["path"].endswith("deltas.yaml")) for l in r["practice"]["layers"]]
+    layers = [(l["root"], l["path"].endswith("software-development.yaml")) for l in r["practice"]["layers"]]
     assert layers == [("user", True), ("workspace", True)]
     listing = deltas.effective(ws, "software-development")
-    assert listing["practice.kiss"]["layer"] == "user" and listing["practice.yagni"]["enabled"] is False and listing["practice.gall"]["layer"] == "shipped"
+    assert listing["practice.kiss"]["layer"] == "user" and listing["practice.yagni"]["enabled"] is False and listing["practice.gall"]["layer"] == "user"
 
 
 def test_render_is_a_labelled_rules_list_and_entries_carry_labels(repo, monkeypatch, tmp_path):

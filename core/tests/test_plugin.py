@@ -1,14 +1,52 @@
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
 from pathlib import Path
 
-from ringframe import __version__
+import pytest
+
+from ringframe import __version__, ask, evaluate, store, workspace
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "plugins" / "claude"
+
+
+def _skill_json_examples(provider, name):
+    text = (ROOT / "plugins" / provider / "skills" / name / "SKILL.md").read_text()
+    return [json.loads(block) for block in re.findall(r"(?:```|~~~)json\n(.*?)\n[ \t]*(?:```|~~~)", text, re.S)]
+
+
+@pytest.mark.parametrize("provider,host", [("claude", "claude-code"), ("codex", "codex")])
+def test_ask_skill_json_examples_compile(provider, host, repo):
+    """Exercise the documented JSON against the product; this is not a model test."""
+    classification, route = _skill_json_examples(provider, "ask")
+    ws = workspace.resolve(cwd=repo).ensure()
+    stage = ws.rf_dir / "tmp" / "example"
+    stage.mkdir(parents=True)
+    (stage / "source.txt").write_text("Implement a health endpoint.")
+    (stage / "body.txt").write_text("Implement a health endpoint.")
+    result = ask.compile(ws, staged=stage, title="Health endpoint", capability="native_plan",
+                         classification=classification, route=route,
+                         host={"name": host, "surface": "native-tui"})
+    event, = store.events(ws)
+    assert event["data"]["classification"] == classification
+    assert event["data"]["route_explanation"] == route
+    assert ask.show(ws, ask_id=result["ask_id"])["outcome"] == "compiled"
+    assert store.verify(ws) == []
+
+
+@pytest.mark.parametrize("provider,host", [("claude", "claude-code"), ("codex", "codex")])
+def test_eval_skill_json_examples_validate(provider, host):
+    """Validate example data only; no judge runs and no Eval verdict is claimed."""
+    intent, judgement = _skill_json_examples(provider, "eval")
+    brief_sha = intent["brief_sha256"]
+    assert intent["judge"]["host"] == judgement["judge"]["host"] == host
+    evaluate.validate_intent(intent, brief_sha, [item["ask_id"] for item in intent["items"]])
+    evaluate.validate_judgement(judgement, brief_sha, "unused", intent["items"], "example",
+                                [finding["path"] for finding in judgement["drift"]])
 
 
 def test_manifests_are_consistent():
@@ -106,7 +144,7 @@ def test_codex_plugin_and_marketplace_manifests():
         policy = (codex / "skills" / name / "agents" / "openai.yaml").read_text()
         assert "allow_implicit_invocation: false" in policy
     ask_text = (codex / "skills/ask/SKILL.md").read_text()
-    assert "request_user_input" in ask_text and "default_mode_request_user_input" in ask_text and "ringframe ask compile" in ask_text and "--handoff" in ask_text
+    assert "ringframe profile show --host codex" in ask_text and "ringframe ask compile" in ask_text and "--handoff" in ask_text
 
 
 CODEX = ROOT / "plugins" / "codex"

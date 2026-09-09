@@ -1,9 +1,19 @@
 # Workspace ledger
 
 The CLI stores records under `.fab7/rf/` in the consumer workspace. The root is
-`--workspace` when supplied, otherwise the Git worktree root or current directory.
-Initialization creates a `.gitignore` containing `*` and sets the RF directory
-to owner-only access.
+`--workspace` when supplied, otherwise the current directory. Hooks use their
+payload's `cwd` unless `--workspace` is supplied. A nested project keeps its own
+ledger; the enclosing Git repository does not determine its location. Use
+`--workspace /path/to/project` when running commands from another directory.
+Eval scopes Git changes and subject digests to this project.
+
+`ringframe init` creates project records in `.fab7/rf/` and empty delta
+catalogs in `.fab7/rt/deltas/`. `ringframe init --global` creates populated
+catalogs in `~/.fab7/rt/deltas/`, preserving existing edits. Profiles remain
+package-owned. Global storage does not collect project events. Existing ledgers
+are never automatically moved or merged.
+
+Initialization makes both project directories self-ignoring and owner-only.
 
 ## Files
 

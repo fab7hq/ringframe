@@ -126,7 +126,7 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
         raise LedgerError("ask.route_policy", f"{capability} with effects {sorted(gated)} requires route.explicit_direct_request=true, "
                           "which is only true when the source intent itself asks to skip planning or act immediately; otherwise select native_plan")
     try:
-        deltas.validate_concerns(classification.get("concerns", []))
+        deltas.validate_concerns(classification.get("concerns", []), ws=ws)
     except config.ConfigError as e:
         raise LedgerError("ask.classification", str(e)) from None
     compiler = {"source": "prompt"}

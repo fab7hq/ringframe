@@ -40,6 +40,11 @@ def _git(root, *args) -> str:
 
 def subject_digest(ws: Workspace, kind: str, ref: str) -> str:
     if kind == "git_commit":
+        prefix = _git(ws.root, "rev-parse", "--show-prefix").strip()
+        if prefix:
+            # Hash only this project, including the empty tree when absent in ref.
+            listing = _git(ws.root, "ls-tree", "--full-tree", "-z", ref, "--", f":(top,literal){prefix.rstrip('/')}")
+            return digest.sha256_bytes(listing.encode())
         return _git(ws.root, "rev-parse", f"{ref}^{{tree}}").strip()
     if kind == "worktree":
         root = Path(ref)
@@ -55,7 +60,7 @@ def subject_digest(ws: Workspace, kind: str, ref: str) -> str:
 
 def default_subject(ws: Workspace) -> tuple[str, str]:
     """The current commit when the tree is clean, else the worktree."""
-    if _git(ws.root, "status", "--porcelain").strip():
+    if _git(ws.root, "status", "--porcelain", "--", ".").strip():
         return "worktree", str(ws.root)
     return "git_commit", _git(ws.root, "rev-parse", "HEAD").strip()
 
@@ -91,12 +96,12 @@ def _changes(ws: Workspace, anchor: str, subject: dict) -> dict:
     target = [subject["ref"]] if subject["kind"] == "git_commit" else []
     root = ws.root if subject["kind"] == "git_commit" else Path(subject["ref"])
     status = {}
-    for line in _git(root, "diff", "--name-status", "-M", anchor, *target).splitlines():
+    for line in _git(root, "diff", "--relative", "--name-status", "-M", anchor, *target, "--", ".").splitlines():
         parts = line.split("\t")
         if len(parts) >= 2:
             status[parts[-1]] = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed"}.get(parts[0][0], parts[0][0].lower())
     files = {}
-    for line in _git(root, "diff", "--numstat", "-M", anchor, *target).splitlines():
+    for line in _git(root, "diff", "--relative", "--numstat", "-M", anchor, *target, "--", ".").splitlines():
         parts = line.split("\t")
         if len(parts) == 3:
             add, rm, name = parts

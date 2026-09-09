@@ -1,4 +1,4 @@
-# RingFrame shipped practice defaults. Overridable per user (~/.fab7/rf/deltas.yaml) and per workspace (.fab7/rf/deltas.yaml).
+# Seed for ~/.fab7/rt/deltas/practice/software-development.yaml; project overrides use the matching .fab7/rt path.
 schema: ringframe.deltas/1
 scope: practice
 domain: software-development

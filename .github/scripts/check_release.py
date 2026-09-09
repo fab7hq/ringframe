@@ -53,7 +53,7 @@ for raw in (wheel_metadata, sdist_metadata):
     metadata = BytesParser().parsebytes(raw)
     require(metadata["Name"] == "ringframe" and metadata["Version"] == version, "Distribution identity mismatch")
     require(metadata["Description-Content-Type"] == "text/markdown", "README content type mismatch")
-    require(metadata.get_payload().strip() == (ROOT / "README.md").read_text().strip(), "Distribution README mismatch")
+    require(metadata.get_payload(decode=True).decode("utf-8").strip() == (ROOT / "README.md").read_text(encoding="utf-8").strip(), "Distribution README mismatch")
 
 checksums = [f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {dist.name}/{p.name}\n" for p in sorted(wheels + sdists)]
 (dist.parent / "SHA256SUMS").write_text("".join(checksums))

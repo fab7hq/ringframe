@@ -53,7 +53,9 @@ in `agents/openai.yaml`.
 - RingFrame does not maintain reusable project memory, impose development
   phases, retry the host, merge, publish, or deploy.
 - Delivery evidence describes activation or submission, not completion.
-- Eval confidence measures judge agreement, not probability of correctness.
+- Eval compares the resulting diff with effective intent; it does not audit
+  the implementation process. Confidence measures judge agreement, not
+  probability of correctness.
 - Seal records a caller's decision. Downstream systems choose their own gates.
 
 The command references describe CLI semantics and the host integration paths.
@@ -64,6 +66,8 @@ require separate empirical evidence.
 ## References
 
 Start with the [README](../README.md) for installation and first use.
+[Claude Code](usage/claude.md) and [Codex](usage/codex.md) cover provider setup;
+[delta configuration](architecture/delta.md) covers personal and project rules.
 [Ask](commands/ask.md), [Eval](commands/eval.md), and [Seal](commands/seal.md)
 describe the commands. [Ledger](architecture/ledger.md) covers local records;
 [Compiler](architecture/compiler.md) covers prompt rules and provenance.

@@ -3,35 +3,75 @@ name: seal
 description: Close the open Asks with one disposition; record the latest Eval as a fact and the receipt.
 ---
 
-You are running RingFrame Seal inside Codex. A Seal is the person's decision
-to close the open Asks; it merges, publishes, deploys, or certifies nothing,
-and no Eval verdict blocks it.
+You are running RingFrame Seal inside Codex. A Seal is the person's
+decision to close the open Asks; it merges, publishes, deploys, or certifies
+nothing, and no Eval verdict blocks it.
 
-Requires the native `request_user_input` tool in this turn. If it is
-unavailable, stop and explain that native confirmation is required. On hosts
-exposing `default_mode_request_user_input`, the person can enable it with
-`codex features enable default_mode_request_user_input`; otherwise use a host
-mode that exposes the tool. Do not change settings or substitute ordinary chat.
-If the host rejects the tool call, the chooser is cancelled or dismissed, or
-no answer is returned, do not create a Seal.
+Arguments are the text after `$rf:seal` in the person's message.
 
-Shell discipline: the shell is for `ringframe` only, exactly one plain
-`ringframe …` command per call. No `&&`, `;`, pipes, `2>&1`, `head`, `cd`,
-`which`, or `codex --version`. Read the command's JSON output directly; never
-page or filter it.
+## Seal boundaries and native confirmation
 
-1. Run `ringframe eval list --json` and `ringframe ask list --json` to see the
-   open Asks and the latest completed Eval over them (verdict, confidence).
-   Seal binds that Eval by default; pass `--eval <evl_id>` only when the
-   person names another.
-2. One confirmation through `request_user_input`: the open Asks by title, the
-   Eval's verdict and confidence (or "no Eval"), and the disposition. Options:
-   the disposition as given (Recommended), the other dispositions, Cancel.
-   Free text is the person's note; pass it verbatim as `--note "<text>"`. Do
-   not ask for an acknowledgement or a justification.
-3. `ringframe seal create --disposition <d> [--eval <evl_id>] [--note
-   "<text>"] --json`. The actor is the interactive person.
-4. Show the receipt path, the sealed Asks, the recorded Eval fact (`verdict`,
-   `confidence`, `subject_matches`), and the limitations verbatim; or the
-   `refusal_codes` verbatim and stop (`seal.no_open_ask`: nothing to close).
-   Downstream gates read a receipt with `ringframe seal check`.
+Requires the `ringframe` CLI and the native `request_user_input` tool in this turn.
+If either is unavailable, explain the missing requirement and stop; for a
+missing CLI, report `uv tool install ringframe`. Do not change host settings
+or substitute ordinary chat for native confirmation. If the host rejects the
+confirmation call, the chooser is cancelled or dismissed, or no answer is
+returned, do not create a Seal.
+
+Use the shell for `ringframe` only, exactly one plain `ringframe …` command
+per call. No `&&`, `;`, pipes, `2>&1`, `head`, `cd`, `which`, or host version
+probes. Read the completed JSON output directly; never page or filter it.
+Collect a running command's final result before proceeding; never rerun a
+pending `seal create` or claim success from empty output.
+
+## 1. Read the open work
+
+Run `ringframe eval list --json` and `ringframe ask list --json` in separate
+calls. Identify the open Asks and the latest completed Eval sharing an open
+Ask, including its verdict and confidence. If there are no open Asks, report
+nothing to close and stop. If either command fails, show the error and stop.
+
+Seal binds the latest matching Eval by default; pass `--eval <eval_id>` only
+when the person names another. An Eval's absence, age, changed subject, or
+verdict does not require a new Eval or block the person's decision.
+
+## 2. Confirm the decision
+
+Show the open Ask titles, the selected Eval's verdict and confidence (or
+"no Eval"), the disposition, and any supplied note through native confirmation.
+Dispositions are `accepted`, `rejected`, `deferred`, and `abandoned`; each closes
+the Asks. Never choose a disposition for the person if none was supplied.
+
+Use `request_user_input` with one question, `id: "seal"`, and header `Seal`.
+
+Offer confirmation of the supplied disposition, a way to select another, and
+Cancel. If no disposition was supplied, ask the person to select one. Respect
+the tool's option limit; name all valid dispositions in the question text and
+allow a typed choice when they cannot all fit in the options.
+
+Preserve notes verbatim as `--note "<text>"`. A note alone or an ambiguous answer
+is not confirmation: show the updated decision and ask again. Proceed only on
+an explicit disposition choice or confirmation of the displayed decision.
+Do not ask for an acknowledgement or a justification; the decision is theirs.
+
+## 3. Create
+
+Run `ringframe seal create --disposition <d> [--eval <eval_id>]
+[--note "<text>"] --json` only after confirmation. The actor is the interactive
+person; do not pass `--actor` or `--authority` unless the person explicitly
+names a pre-authorized policy. Do not infer policy authority from the verdict.
+
+## 4. Report
+
+On success, show the receipt path, sealed Asks, recorded Eval fact (`verdict`,
+`confidence`, `subject_matches`, or no Eval), and limitations verbatim.
+On refusal, show `refusal_codes` verbatim and stop:
+
+- `seal.no_open_ask`: nothing to close.
+- `seal.eval_missing`: the named Eval does not exist or is not completed.
+- `seal.eval_unrelated`: the named Eval shares no open Ask.
+- `seal.authority_missing`: no matching authorization for the declared actor.
+
+For any other failure, show the error and stop without claiming a receipt.
+Downstream consumers check a receipt with
+`ringframe seal check --seal <seal_id> --json`.

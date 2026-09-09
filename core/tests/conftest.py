@@ -14,3 +14,9 @@ def repo(tmp_path):
         check=True,
     )
     return tmp_path
+
+
+@pytest.fixture(autouse=True)
+def isolated_user_config(tmp_path_factory, monkeypatch):
+    # Delta reads use the user's on-disk catalog; tests never read or edit real config.
+    monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("ringframe-user")))

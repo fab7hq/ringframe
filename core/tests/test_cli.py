@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from ringframe import cli
+from ringframe import __version__, cli
 from tests.test_eval import commit, head, intent, judgement, two_asks_and_work
 
 CLS = json.dumps({"task": ["plan"], "result": "plan", "interaction": "approval_gated", "horizon": "session", "effects": ["read"]})
@@ -172,7 +172,7 @@ def test_export_and_prune(repo, monkeypatch, tmp_path):
 def test_module_entrypoint_and_version():
     cp = subprocess.run([sys.executable, "-m", "ringframe", "--version"], capture_output=True, text=True,
                         env={**os.environ, "PYTHONPATH": "core"})
-    assert cp.returncode == 0 and cp.stdout.strip() == "ringframe 0.0.1"
+    assert cp.returncode == 0 and cp.stdout.strip() == f"ringframe {__version__}"
 
 
 def test_deltas_commands(repo, monkeypatch, tmp_path):
@@ -181,7 +181,7 @@ def test_deltas_commands(repo, monkeypatch, tmp_path):
     assert code == 0 and [e["id"] for e in out["host"]] == ["codex.native_goal.item_loop", "codex.native_goal.terminal_condition"]
     assert all(e["status"] == "candidate" for e in out["host"])
     code, out, _ = run(repo, "deltas", "list", "--effective", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and out["practice.kiss"]["layer"] == "shipped"
+    assert code == 0 and out["practice.kiss"]["layer"] == "user"
     cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]})
     code, out, _ = run(repo, "deltas", "render", "--host", "codex", "--host-version", "codex-cli 0.153.4", "--capability", "native_plan", "--classification", cls, "--json", monkeypatch=monkeypatch)
     assert code == 0 and "practice.hyrum" in out["practice"]["selected"] and out["text"]
@@ -207,3 +207,98 @@ def test_eval_list_cli(repo, monkeypatch):
 def test_ask_list_cli(repo, monkeypatch):
     code, out, _ = run(repo, "ask", "list", "--json", monkeypatch=monkeypatch)
     assert code == 0 and out == {"asks": []}
+
+
+@pytest.mark.parametrize("host_name", ["codex", "claude-code"])
+def test_hook_uses_payload_project_and_initializes_private_storage(repo, monkeypatch, host_name):
+    project = repo / "test"
+    project.mkdir()
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"cwd": str(project), "session_id": "nested", "prompt": "/rf:ask fix login"})))
+    assert cli.main(["sessions", "capture", "--host", host_name, "--json"]) == 0
+    rf = project / ".fab7/rf"
+    assert (rf / f"sessions/{host_name}/nested/prompts.jsonl").exists()
+    assert (rf / ".gitignore").read_text() == "*\n"
+    assert rf.stat().st_mode & 0o777 == 0o700
+    assert not (repo / ".fab7").exists()
+
+
+def test_global_init_materializes_deltas_and_preserves_customizations(repo, tmp_path, monkeypatch):
+    from importlib.resources import files
+    home = tmp_path / "user-home"
+    monkeypatch.setenv("HOME", str(home))
+    code, out, _ = run(repo, "init", "--global", "--json", monkeypatch=monkeypatch)
+    assert code == 0
+    root = home / ".fab7/rt"
+    assert not (repo / ".fab7").exists()
+    for rel in ["deltas/codex.yaml", "deltas/claude-code.yaml", "deltas/practice/software-development.yaml"]:
+        assert (root / rel).read_bytes() == (files("ringframe") / rel).read_bytes()
+    catalog = root / "deltas/codex.yaml"
+    catalog.write_text(catalog.read_text() + "\n# User customization preserved\n")
+    before = catalog.read_bytes()
+    code, _, _ = run(repo, "init", "--global", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and catalog.read_bytes() == before
+    assert set(root.iterdir()) == {root / "deltas"}
+
+
+def test_nested_compile_and_hook_delivery_keep_records_in_project(repo, monkeypatch):
+    project = repo / "test"
+    project.mkdir()
+    monkeypatch.chdir(project)
+    # No explicit workspace: reproduce a CLI invoked from a nested host project.
+    assert cli.main(["ask", "compile", "--staged", staged(project), "--title", "Login", "--capability", "native_plan", "--classification", CLS, "--route", ROUTE, "--host", host(), "--json"]) == 0
+    from ringframe import ask, store, workspace
+    ws = workspace.resolve(cwd=project)
+    record = ask.list_asks(ws)[0]
+    ask_id = record["ask_id"]
+    assert cli.main(["ask", "confirm", "--ask", ask_id, "--json"]) == 0
+    monkeypatch.chdir(repo)
+    payload = {"hook_event_name": "PostToolUse", "cwd": str(project), "session_id": "s1", "tool_name": "EnterPlanMode", "tool_use_id": "t1", "tool_response": {"ok": 1}}
+    monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
+    assert cli.main(["ask", "delivery", "--from-hook", "--json"]) == 0
+    assert ask.show(ws, ask_id)["delivery"] == "native_accepted"
+    assert store.verify(ws) == []
+    assert (ws.rf_dir / "asks" / ask_id / "prompt.txt").exists()
+    assert not (ws.rf_dir / "tmp/stage-1").exists()
+    assert not (repo / ".fab7").exists()
+
+
+def test_compile_reads_merged_ledger_delta_files(repo, monkeypatch):
+    from ringframe import deltas, workspace
+    ws = workspace.resolve(cwd=repo).ensure()
+    workspace.initialize_user()
+    local = ws.rt_dir / "deltas/practice/software-development.yaml"
+    local.write_text("concerns: [project_special]\nrender: {core_cap: 1}\nentries: [{id: practice.kiss, text: Use the project setting.}]\n")
+    cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["project_special"]})
+    stage = repo / "stage"
+    stage.mkdir()
+    (stage / "source.txt").write_text("fix login")
+    (stage / "body.txt").write_text("Fix login.")
+    code, out, _ = run(repo, "ask", "compile", "--staged", str(stage), "--title", "Login", "--capability", "native_plan", "--classification", cls, "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+    assert code == 0
+    from pathlib import Path
+    assert "Use the project setting." in Path(out["prompt_path"]).read_text()
+    code, out, _ = run(repo, "deltas", "list", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["practice"][0]["text"] == "Use the project setting."
+    assert deltas.load_practice_catalog()["entries"][0]["text"] != "Use the project setting."
+
+
+def test_profile_cli_exposes_routing_and_capability_sources(repo, monkeypatch):
+    from ringframe import profiles
+    for name in ("codex", "claude-code"):
+        code, out, _ = run(repo, "profile", "show", "--host", name, "--json", monkeypatch=monkeypatch)
+        assert code == 0 and out["routing"] == profiles.load(name)["routing"]
+        assert out["routing"]["precedence"]
+        assert set(out["routing"]["precedence"]) == {cap["id"] for cap in out["capabilities"]}
+        for cap in out["capabilities"]:
+            assert cap["selection"] and cap["sources"]
+            assert all(url.startswith("https://") for url in cap["sources"])
+            assert cap["delivery_mode"] in {"native_dispatch", "human_handoff"}
+
+
+def test_delta_listing_exposes_merged_concern_vocabulary(repo, monkeypatch):
+    from ringframe import workspace
+    ws = workspace.resolve(cwd=repo).ensure()
+    (ws.rt_dir / "deltas/practice/software-development.yaml").write_text("concerns: [team_boundary]\n")
+    code, out, _ = run(repo, "deltas", "list", "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["concerns"] == ["team_boundary"]

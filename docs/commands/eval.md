@@ -19,6 +19,11 @@ flowchart LR
     V --> R[Record verdict and confidence]
 ```
 
+Eval compares the resulting diff with the effective confirmed intent to find
+omissions and unexplained changes. It does not audit the implementation
+sequence, such as whether the agent followed TDD. Evaluating a delta’s effect
+on that behavior belongs in a separate experiment.
+
 ## Basis and subject
 
 An Ask is open from `ask.compiled` until cancellation or a Seal names it.
@@ -36,7 +41,7 @@ The default subject is `HEAD` for a clean tree, otherwise the worktree:
 
 | Kind | Reference | Digest |
 | --- | --- | --- |
-| `git_commit` | Commit ID | Git tree hash |
+| `git_commit` | Commit ID | Git tree hash at the repository root; SHA-256 of the project subtree listing for a nested project |
 | `worktree` | Absolute root | SHA-256 over sorted file paths, modes, and content digests, including untracked non-ignored files |
 
 ## Judgement and aggregation
@@ -49,8 +54,10 @@ The skill requests one intent judge to produce `active`, `revised`, or
 `withdrawn` items traced to Asks. Three assessors (`coverage`, `drift`, `adversary`) each vote
 `yes`, `no`, or `unknown` on active items and classify every changed path as
 `required`, `consequence`, or `unexplained`. Judges are instructed to write only
-their staged output files. Codex's fallback uses sequential passes marked
-`shared_context` when sub-agents are unavailable.
+their staged output files. Both skills allow four sequential passes marked
+`shared_context` only when the native agent tool is absent or explicitly
+reports unavailability; the reason must be disclosed. A pending result or
+file permission denial does not justify that fallback.
 
 `eval close` requires at least three judgement files bound to the brief digest,
 votes covering active items, and classifications covering changed paths. The
@@ -79,13 +86,19 @@ and submit them to `eval close`. The RingFrame CLI does not spawn agents.
 
 | Host | Skill instructions |
 | --- | --- |
-| [Claude Code](../../plugins/claude/skills/eval/SKILL.md) | Use `Agent` for the intent judge, then three foreground assessors. No shared-context fallback is specified. |
-| [Codex](../../plugins/codex/skills/eval/SKILL.md) | Use the exposed native sub-agent tool. Fall back to four sequential passes only if the tool is absent or explicitly reports unavailability; mark every pass `shared_context`. |
+| [Claude Code](../../plugins/claude/skills/eval/SKILL.md) | Use foreground `Agent` calls, `Read` for evidence, and `Write` for judge files. |
+| [Codex](../../plugins/codex/skills/eval/SKILL.md) | Request fresh native agent contexts (`fork_turns: "none"` when exposed). Read evidence with a native file tool or one plain `cat` call; collect completed command and agent results. |
 
-In Codex, make the requested delegation explicit:
+Both skills share the intent and judgement schemas, all-item/all-path coverage,
+fallback conditions, validation-error recovery, and reporting instructions.
+These are instructions, not evidence that a host followed them.
+
+In Codex, explicitly request sub-agents when invoking Eval to authorize spawning
+the reviewers. Include this instruction even when native sub-agent tools are
+enabled; do not rely on `$rf:eval` alone to request delegation:
 
 ```text
-$rf:eval — explicitly use four native sub-agents for this evaluation.
+$rf:eval use native sub-agents
 ```
 
 This wording cannot grant a missing tool or guarantee spawning. The host owns

@@ -27,13 +27,19 @@ Classify only the task, result, interaction, horizon, effects, and optional
 concerns needed for routing. Preserve the user's constraints without inventing
 project context, permissions, or acceptance requirements.
 
-The shipped skills prefer `native_plan` for work with effects and
-`native_direct` for read-only work or an explicit request to act immediately.
-The CLI requires `route.explicit_direct_request=true` for direct execution with
-specified write, execute, or external effects; the skill supplies that assertion.
-Codex also offers `native_goal` for a continuing objective. Host profiles define
-capabilities and delivery modes. The CLI refuses capabilities absent from the
-selected profile; it cannot check whether the current host exposes their tools.
+The coordinator first reads `ringframe profile show --host <host> --json`.
+The profile supplies capability selection criteria and precedence, so routing
+follows the intended outcome and continuation without requiring command names.
+A continuing objective can select Goal before the general Plan default for
+work with effects. Explicit planning-only or review-only requests retain that
+scope. Codex also maps native code review; Claude uses direct execution for
+review because no separate review route is adopted in its profile.
+
+`ringframe deltas list` exposes the merged concern vocabulary; `deltas render`
+returns the applicable directives. The CLI requires
+`route.explicit_direct_request=true` for direct execution with specified effects
+and refuses capabilities absent from the selected profile. It does not determine
+semantic suitability or prove that the current host exposes the declared tool.
 
 The [compiler](../architecture/compiler.md) selects directives. The skill
 composes a task brief with labelled `Rules:` lines, then stages `source.txt`
@@ -89,17 +95,18 @@ and offers the stored prompt for manual handoff.
 
 `native_direct` continues in the same turn and has no delivery receipt. The
 [profile](../../core/ringframe/profiles/claude-code.yaml) also declares a manual
-Goal route, but the Claude Ask skill offers only Plan and direct execution.
+Goal route. The coordinator can propose it for a continuing objective and
+hand the stored prompt to the user.
 
 ### Codex
 
 The [Ask skill](../../plugins/codex/skills/ask/SKILL.md) requires
 `request_user_input` in the current turn. Missing or rejected confirmation
 stops it without confirming; no answer cancels the candidate. See
-[Codex setup](../../README.md#codex) for tool availability and prompt-hook trust.
+[Codex setup](../usage/codex.md#prerequisites) for tool availability and prompt-hook trust.
 
 The [profile](../../core/ringframe/profiles/codex.yaml) uses manual handoff for
-Plan and Goal. The CLI adds `/plan ` or `/goal `, with a 4,000-character Goal
+Plan, Goal, and Review. The CLI adds `/plan `, `/goal `, or `/review `, with a 4,000-character Goal
 limit. After confirmation, the skill records `handoff_ready` and supplies the
 complete `prompt.txt` path for the user to submit. The prompt hook can then
 record a matching submission. `native_direct` continues in the same turn.

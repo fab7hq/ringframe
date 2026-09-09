@@ -1,14 +1,14 @@
 ---
 name: ask
-description: Turn one explicit intent into a confirmed, persisted, host-native prompt and activate the selected capability.
+description: Turn one explicit intent into a confirmed, persisted prompt and deliver it through the selected native capability.
 argument-hint: <intent>
 disable-model-invocation: true
 allowed-tools: AskUserQuestion EnterPlanMode Write Bash(ringframe *)
 ---
 
-You are running RingFrame Ask inside Claude Code. RingFrame understands Claude
-Code's native capabilities; Claude Code understands the project; the user
-supplies and approves the intent.
+You are running RingFrame Ask inside Claude Code. The person supplies and
+approves the intent; the host owns task execution. Requires the `ringframe` CLI
+on PATH. Native confirmation and delivery follow the profile in section 1.
 
 The exact source intent is:
 
@@ -16,49 +16,79 @@ The exact source intent is:
 $ARGUMENTS
 </source-intent>
 
-## Rules that hold for the whole turn
+Use `Write` for staging; it creates the staging directory itself.
 
-- Before confirmation, use tools only to select RingFrame directives, stage
-  and compile the candidate, read its rendered prompt, and show
-  `AskUserQuestion`. Do not inspect project files, research, or begin the work.
+## Ask boundaries
+
+- Before confirmation, use tools only to read the profile and directives, stage
+  and compile the candidate, read its rendered prompt, and show native
+  confirmation. Do not inspect project files, research, or begin the work.
 - Preserve the source intent exactly. Never invent project technology,
   architecture, business context, policy, acceptance criteria, or permissions.
-- Never print classification labels, `NEXT_COMMAND`, a copyable `/plan`
-  command, or compiler protocol. Never claim a capability was activated before
-  its tool result confirms it.
-- `Bash` is for `ringframe` only. Run exactly one plain `ringframe …` command
-  per call: no `&&`, `;`, pipes, `cd`, `mkdir`, `which`, `command -v`, or
-  `claude --version`. The `Write` tool creates the staging directory itself.
-- If a `ringframe` command fails with "command not found", stop and tell the
-  user to run `uv tool install ringframe`; do not write the ledger by hand.
+- For Ask preparation and ledger commands, run exactly one plain `ringframe …`
+  command per shell call: no `&&`, `;`, pipes, `cd`, `mkdir`, `which`,
+  `command -v`, or host version probes. Use the host's file-writing tool to stage
+  inputs. Confirmed task execution follows the selected profile and normal
+  host permissions.
+- If `ringframe` is not found, stop and tell the person to run
+  `uv tool install ringframe`; never write ledger records by hand.
+- Never print classification labels, `NEXT_COMMAND`, or compiler protocol.
+  Show the stored prompt through confirmation and delivery as described below.
+  Never claim activation or submission without the corresponding evidence.
 
-## 1. Route
+## 1. Read the profile and route
 
-Classify only what routing needs: task and result; interactive or
-approval-gated; one-turn, session, or persistent horizon; read, write,
-execute, or external effects. Then select one capability from this profile:
+Run `ringframe profile show --host claude-code --json`. This is the routing
+authority: read `routing.guidance`, `routing.precedence`, and each capability's
+`selection`, `effects`, `confirmation`, `activation`, `delivery_mode`,
+`continuation`, and `limitations`. Do not read research files or maintain a
+separate list of capabilities in the skill.
 
-- `native_plan`: any intent whose effects include `write`, `execute`, or
-  `external_effect` (new code, tests, files, commands), unless the source
-  intent itself says to skip planning or to do it immediately. Claude Code
-  will enter Plan mode, research read-only, and present its native plan
-  review. Size is not the criterion; a review boundary before effects is.
-- `native_direct`: read-only or answer-only intents, or an intent that
-  explicitly asks to skip planning or act now. Work continues in this turn
-  under normal permissions. When you select it for an intent with effects,
-  set `"explicit_direct_request": true` in `--route`; the CLI refuses
-  `native_direct` with effects otherwise, and you then select `native_plan`.
+Classify the source intent's task, desired result, interaction, horizon, and
+effects. Compare the returned capabilities using their selection guidance and
+precedence; the user does not need to know or name a native command. Select
+only an ID returned by this profile. Preserve explicit constraints and explain
+material uncertainty in the route gaps rather than inventing requirements.
+If the selected capability has `requires_explicit_request_for_effects`, set
+`explicit_direct_request` to true only when the source itself requests immediate
+execution or skipping planning; otherwise choose a fitting alternative.
 
-Claude Code exposes no persistent goal capability on this surface; do not
-offer one.
+Use the selected capability's `confirmation.tool`. Check it is available before
+compiling. Missing or rejected native confirmation stops this Ask without
+confirming or continuing; do not substitute ordinary chat or change host settings.
 
-## 2. Compose the prompt from the selected directives
+If concerns are relevant, run `ringframe deltas list --host claude-code --json`
+and use its merged `concerns` vocabulary to classify them. Otherwise omit
+concerns. The CLI reads the global and project delta files; project values win.
 
-1. Run, via `Bash`, `ringframe deltas render --host claude-code --capability
-   native_plan|native_direct --classification '<json>' --json` with the
-   classification from section 4. The CLI selects the directives that apply
-   to this Ask (`host.entries`, `practice.entries`); you never choose, drop,
-   or add rules.
+Use these JSON shapes for `--classification` and `--route`. Replace example
+values and angle-bracket placeholders with this intent's classification and
+route explanation; lists stay lists and strings stay strings.
+
+```json
+{"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}
+```
+
+`task` items come from `question research clarify plan implement diagnose review
+operate document`; `result` is one of `answer plan workspace_change evidence
+continuing_objective`; `interaction` is `interactive` or `approval_gated`;
+`horizon` is `one_turn`, `session`, or `persistent`; `effects` items come from
+`read write execute external_effect`. Optional `concerns` is a list of names
+from the merged vocabulary above; omit it when none applies.
+
+```json
+{"fits": "<why this capability fits>", "alternatives": [{"capability": "<alternative profile capability ID>", "reason": "<why it fits less well>"}], "continuation": "<what happens after confirmation>", "effects": "<effects in words>", "gaps": [], "explicit_direct_request": false}
+```
+
+Use an empty `alternatives` list if no alternative applies. Do not guess a host
+version or session ID: the CLI resolves them from the plugin hook's capture.
+
+## 2. Compose and persist before asking
+
+1. Run `ringframe deltas render --host claude-code --capability <id>
+   --classification '<json>' --json` with the classification above. The CLI
+   selects the directives that apply to this Ask (`host.entries`,
+   `practice.entries`); you never choose, drop, or add rules.
 2. Write the prompt in two parts. First, one brief for this task, the way a
    senior engineer briefs a peer: start from the exact source intent and name
    the artifacts, paths, and constraints it names; add nothing else. Then a
@@ -69,77 +99,63 @@ offer one.
    supplied set; the CLI refuses unknown labels and records which supplied
    directives you applied or omitted. Do not restate a directive generically
    or explain a principle. Do not add a command prefix: the CLI adds it.
+3. Under the project workspace root (the current working directory), never
+   under this skill's directory, write `.fab7/rf/tmp/stage-<nonce>/source.txt`
+   with the exact source intent and `.fab7/rf/tmp/stage-<nonce>/composed.txt`
+   with only the composed prompt. Persist the candidate before showing the
+   chooser so its record exists even if the turn ends early.
+4. Only after both files exist, run
+   `ringframe ask compile --staged <dir> --title "<short title>"
+   --capability <id> --classification '<json>' --route '<json>' --host
+   '{"name":"claude-code","surface":"native-tui"}' --json`.
+   Keep the returned `ask_id`. On a reported input-validation error, correct
+   that input without changing the source intent and retry. If the same error
+   recurs, the cause is unclear, or the failure is not input validation, show
+   the error and stop. Never confirm a failed compile.
 
-## 3. Persist the candidate, then confirm natively
+## 3. Confirm with the native tool
 
-Before showing the chooser, persist the candidate so the record exists even if
-the turn ends early:
+Run `ringframe ask copy --ask <ask_id>` to obtain the complete rendered prompt
+verbatim; never retype or summarise it. Call the selected capability's
+confirmation tool with one single-select question. Explain the selected
+capability, why it fits, why the alternatives fit less well, and the expected
+continuation and effects. Offer `Proceed (Recommended)`, the most relevant
+alternative returned by the profile if one applies, and `Cancel`.
 
-1. Pick a nonce and, with the `Write` tool, create, **under the project
-   workspace root (the current working directory), never under this skill's
-   directory**, `.fab7/rf/tmp/stage-<nonce>/source.txt` containing exactly the source
-   intent above, and `.fab7/rf/tmp/stage-<nonce>/composed.txt` containing
-   only the composed prompt from section 2 (no frontmatter, explanation, or
-   copy instructions). The CLI adds the prefix, records which directives it
-   supplied, and publishes `prompt.txt`.
-2. Run, via `Bash`, `ringframe ask compile --staged <that directory> --title
-   "<short human title>" --capability native_plan|native_direct
-   --classification '<json>' --route '<json>' --host
-   '{"name":"claude-code","surface":"native-tui"}' --json`, with the
-   vocabulary in section 4. Keep the returned `ask_id`. If it exits non-zero,
-   show the error text and stop.
+For `AskUserQuestion`, use header `Ask route`, put the complete rendered
+prompt in the Proceed option's `preview`, and set metadata source to
+`ringframe.ask`. Say the person may type a revision or select another route.
 
-Then your first externally visible interaction is one `AskUserQuestion` call
-with one single-select question:
+A different route or free-text revision means stage and compile a new candidate
+with `--link revises:<previous ask_id>`, then ask again. Every candidate shown
+is persisted; only the last one is confirmed.
 
-- header: `Ask route`
-- question: name the selected capability and why it fits, why the other route
-  does not fit, the expected continuation and effects, and that the user may
-  proceed, type a revision, choose the other route, or cancel.
-- option `Proceed with Plan (Recommended)` (or `Proceed directly
-  (Recommended)` when `native_direct` was selected): one sentence on what
-  Claude Code will do next; put the complete rendered prompt in `preview`,
-  obtained verbatim from `ringframe ask copy --ask <ask_id>` (the CLI rendered
-  it from the staged candidate; never retype or summarise it).
-- option `Use direct execution` (or `Plan first`): the other route.
-- option `Cancel`: nothing is activated or inspected.
-- metadata source: `ringframe.ask`
+## 4. Record the answer and deliver
 
-Free text is a revision: compile the revised candidate again (a new
-`ringframe ask compile` with `--link revises:<previous ask_id>`) and ask again.
-Every candidate shown to the user is persisted; only the last one is confirmed.
+- Proceed: run `ringframe ask confirm --ask <ask_id> --json`. Deliver only
+  after that command succeeds.
+- Cancel: run `ringframe ask cancel --ask <ask_id> --reason "<why>" --json`
+  and stop.
+- No answer (dismissed, timed out, or empty): run
+  `ringframe ask cancel --ask <ask_id> --reason "chooser dismissed" --json`
+  and stop. Report cancellation only if the command succeeds. Never interpret
+  a missing answer as approval.
 
-## 4. Record the answer through the CLI
+After successful confirmation, use the selected capability's delivery fields:
 
-- Proceed: `ringframe ask confirm --ask <ask_id> --json`.
-- Cancel: `ringframe ask cancel --ask <ask_id> --reason "<why>" --json`, then
-  stop.
+- `human_handoff`: run `ringframe ask delivery --ask <ask_id> --handoff`
+  and show its output verbatim. The person submits the stored prompt.
+- `native_dispatch` with an `activation.tool`: call that tool, then follow
+  the profile's continuation with the confirmed prompt as the brief. Claim
+  activation only from its result and the profile's receipt mechanism; never
+  invent a receipt. If activation fails, record
+  `ringframe ask delivery --ask <ask_id> --state delivery_failed --reason "<error>"`,
+  then run `ringframe ask delivery --ask <ask_id> --handoff` and show its output
+  verbatim. Stop if recording the failure fails.
+- `native_dispatch` without an activation tool: continue in this turn using
+  the confirmed prompt under normal host permissions. Record nothing else.
 
-Vocabulary for `ringframe ask compile`: `--classification '<json>'` uses
-exactly this vocabulary: `task` is a
-   list from `question research clarify plan implement diagnose review operate
-   document`; `result` is one of `answer plan workspace_change evidence
-   continuing_objective`; `interaction` is `interactive` or `approval_gated`;
-   `horizon` is `one_turn`, `session`, or `persistent`; `effects` is a list
-   from `read write execute external_effect`. `--route '<json>'` with keys
-   `fits`, `alternatives` (list of `{capability, reason}`), `continuation`,
-   `effects`, `gaps` (list), and `explicit_direct_request` (boolean, true only
-   when the source intent asks to skip planning or act immediately).
-   `--classification` may also carry `concerns`: a list from `api_surface
-   auth data_migration concurrency performance refactor dependency_change ui
-   cli tests_only operate` naming what the intent touches; the CLI selects
-   situational practice directives from it. Omit it when none applies. Do not
-   guess a version or session id: the CLI takes both from the plugin hook's
-   capture of this very invocation.
-
-## 5. Deliver
-
-- `native_plan`: call `EnterPlanMode`. The plugin's hook records the receipt.
-  Then work inside Plan mode using the confirmed prompt as your brief; Claude
-  Code owns research, the plan, `ExitPlanMode`, and what follows. If
-  `EnterPlanMode` returns an error, run `ringframe ask delivery --ask <ask_id>
-  --state delivery_failed --reason "<error>"`, then `ringframe ask delivery
-  --ask <ask_id> --handoff` and show its output verbatim.
-- `native_direct`: continue with the source intent under normal permissions.
-  Record nothing else.
-- Cancel: already recorded in section 4; stop.
+Submission is `observed` only when the prompt hook matches the compiled input.
+`ringframe ask submitted --ask <ask_id>` records the person's attestation as
+`attributed`; use it only when the person actually attests submission. A handoff
+alone does not establish submission.

@@ -4,8 +4,11 @@ Authored as YAML, rendered deterministically by the CLI. The model writes the ta
 the standing rules. Verification of the work is rf:eval's, so no delta carries a check."""
 
 import os
+import shutil
 from importlib import resources
 from pathlib import Path
+
+import yaml
 
 from ringframe import config
 
@@ -21,8 +24,100 @@ def host_catalog_names() -> list[str]:
     return sorted(p.name[:-5] for p in _DIR.iterdir() if p.name.endswith(".yaml"))
 
 
-def load_host_catalog(host: str) -> dict:
-    cat = config.load_yaml_text((_DIR / f"{host}.yaml").read_text(encoding="utf-8"), f"deltas/{host}.yaml")
+def user_root() -> Path:
+    return Path.home() / ".fab7" / "rt"
+
+
+def catalog_paths() -> list[Path]:
+    return [Path(p.name) for p in _DIR.iterdir() if p.name.endswith(".yaml")] + [
+        Path("practice") / p.name for p in (_DIR / "practice").iterdir() if p.name.endswith(".yaml")]
+
+
+def initialize(root: Path, *, global_scope: bool = False) -> list[str]:
+    """Seed global catalogs or empty project files; preserve existing configuration."""
+    root.mkdir(parents=True, exist_ok=True)
+    os.chmod(root, 0o700)
+    legacy = root.parent / "rf"
+    paths = catalog_paths()
+    # Move old delta catalogs before seeding. New-path values take precedence.
+    for old_dir in (legacy / "defaults/deltas", legacy / "deltas"):
+        if old_dir.exists():
+            for source in sorted(old_dir.rglob("*.yaml")):
+                target = root / "deltas" / source.relative_to(old_dir)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    merged = config.merge(config.load_yaml(source, allow_empty=True), config.load_yaml(target, allow_empty=True))
+                    target.write_text(yaml.safe_dump(merged, sort_keys=False, allow_unicode=True), encoding="utf-8")
+                    source.unlink()
+                else:
+                    source.replace(target)
+            for directory in sorted(old_dir.rglob("*"), reverse=True):
+                if directory.is_dir() and not any(directory.iterdir()):
+                    directory.rmdir()
+            if not any(old_dir.iterdir()):
+                old_dir.rmdir()
+    for rel in paths:
+        target = root / "deltas" / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with target.open("xb") as f:
+                f.write((_DIR / rel.as_posix()).read_bytes() if global_scope else b"")
+        except FileExistsError:
+            pass
+    # Fold the former practice-only override into its catalog before removing it.
+    for old in (legacy / "deltas.yml", legacy / "deltas.yaml"):
+        if old.exists():
+            patch = config.load_yaml(old, allow_empty=True)
+            _check(not patch or patch.get("schema") == SCHEMA, f"{old}: schema must be {SCHEMA}")
+            if patch.get("entries") == []:
+                patch.pop("entries")  # The former empty override list meant inherit.
+            target = root / "deltas/practice/software-development.yaml"
+            merged = config.merge(config.load_yaml(target, allow_empty=True), patch)
+            target.write_text(yaml.safe_dump(merged, sort_keys=False, allow_unicode=True), encoding="utf-8")
+            old.unlink()
+    if global_scope:
+        # Profiles remain package-owned; these were only exported reference copies.
+        for directory in (legacy / "defaults/profiles", legacy / "profiles"):
+            if directory.exists():
+                shutil.rmtree(directory)
+        defaults = legacy / "defaults"
+        if defaults.is_dir() and not any(defaults.iterdir()):
+            defaults.rmdir()
+        if legacy.is_dir() and not any(legacy.iterdir()):
+            legacy.rmdir()
+    else:
+        ignore = root / ".gitignore"
+        if not ignore.exists():
+            ignore.write_text("*\n", encoding="utf-8")
+    return [str(root / "deltas" / rel) for rel in paths]
+
+
+def _layers(ws=None, relative: str = "practice/software-development.yaml") -> list[dict]:
+    global_root = user_root()
+    path = global_root / "deltas" / relative
+    if not path.exists():
+        initialize(global_root, global_scope=True)
+    locations = [("user", path)]
+    if ws is not None:
+        locations.append(("workspace", ws.rt_dir / "deltas" / relative))
+    out = []
+    for scope, path in locations:
+        if path.exists():
+            doc = config.load_yaml(path, allow_empty=True)
+            if doc:
+                out.append({"root": scope, "path": str(path), "sha256": config.sha256_of(doc), "document": doc})
+    return out
+
+
+def _catalog(relative: str, ws=None) -> dict:
+    merged = {}
+    for layer in _layers(ws, relative):
+        merged = config.merge(merged, layer["document"])
+    return merged
+
+
+def load_host_catalog(host: str, ws=None) -> dict:
+    cat = _catalog(f"{host}.yaml", ws)
     _check(cat.get("schema") == SCHEMA and cat.get("scope") == "host" and cat.get("host") == host, f"deltas/{host}.yaml: not a host catalog")
     for e in cat.get("entries", []):
         _check(all(k in e for k in ("id", "capability", "text", "matrix_ref", "status")), f"deltas/{host}.yaml: entry {e.get('id')} incomplete")
@@ -30,8 +125,8 @@ def load_host_catalog(host: str) -> dict:
     return cat
 
 
-def load_practice_catalog(domain: str = DEFAULT_DOMAIN) -> dict:
-    cat = config.load_yaml_text((_DIR / "practice" / f"{domain}.yaml").read_text(encoding="utf-8"), f"deltas/practice/{domain}.yaml")
+def load_practice_catalog(domain: str = DEFAULT_DOMAIN, ws=None) -> dict:
+    cat = _catalog(f"practice/{domain}.yaml", ws)
     _check(cat.get("schema") == SCHEMA and cat.get("scope") == "practice", f"deltas/practice/{domain}.yaml: not a practice catalog")
     cat.setdefault("render", {}).setdefault("core_cap", 5)
     cat.setdefault("concerns", [])
@@ -40,29 +135,14 @@ def load_practice_catalog(domain: str = DEFAULT_DOMAIN) -> dict:
     return cat
 
 
-def user_layer_path() -> Path:
-    return Path(os.environ.get("HOME") or Path.home()) / ".fab7" / "rf" / "deltas.yaml"
-
-
-def _layers(ws) -> list[dict]:
-    out = []
-    for root, path in (("user", user_layer_path()), ("workspace", ws.rf_dir / "deltas.yaml")):
-        if path.exists():
-            doc = config.load_yaml(path)
-            _check(doc.get("schema") == SCHEMA, f"{path}: schema must be {SCHEMA}")
-            out.append({"root": root, "path": str(path), "sha256": config.sha256_of(doc), "entries": doc.get("entries", [])})
-    return out
-
-
 def effective(ws, domain: str = DEFAULT_DOMAIN) -> dict:
-    """id -> merged entry with the layer that last touched it. Overrides replace fields by id; new ids add entries."""
-    shipped = load_practice_catalog(domain)
-    merged = {e["id"]: {**e, "layer": "shipped"} for e in shipped["entries"]}
-    for layer in _layers(ws):
-        for o in layer["entries"]:
-            _check("id" in o, f"{layer['path']}: override without id")
-            base = merged.get(o["id"], {"applies_to": {}, "text": "", "principle": "team"})
-            merged[o["id"]] = {**base, **o, "layer": layer["root"]}
+    """Merged entries keyed by id, annotated with the last scope defining each entry."""
+    cat = load_practice_catalog(domain, ws)
+    merged = {e["id"]: {**e, "layer": "user"} for e in cat["entries"]}
+    for layer in _layers(ws, f"practice/{domain}.yaml"):
+        for entry in layer["document"].get("entries", []):
+            if entry["id"] in merged:
+                merged[entry["id"]]["layer"] = layer["root"]
     return merged
 
 
@@ -77,8 +157,8 @@ def _matches(entry: dict, classification: dict) -> bool:
     return True
 
 
-def validate_concerns(concerns, domain: str = DEFAULT_DOMAIN) -> None:
-    vocab = set(load_practice_catalog(domain)["concerns"])
+def validate_concerns(concerns, domain: str = DEFAULT_DOMAIN, ws=None) -> None:
+    vocab = set(load_practice_catalog(domain, ws)["concerns"])
     unknown = [c for c in (concerns or []) if c not in vocab]
     _check(not unknown, f"unknown concern(s) {unknown}; domain {domain} knows {sorted(vocab)}")
 
@@ -88,14 +168,14 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
     # ---- host layer
     host_block = {"catalog_sha256": None, "deltas": [], "status_filter": list(statuses), "text": "", "entries": []}
     if profile.get("host") in host_catalog_names():
-        cat = load_host_catalog(profile["host"])
-        chosen = [e for e in cat["entries"] if e["capability"] == capability and e["status"] in statuses]
+        cat = load_host_catalog(profile["host"], ws)
+        chosen = [e for e in cat["entries"] if e["capability"] == capability and e["status"] in statuses and e.get("enabled") is not False]
         host_block.update(catalog_sha256=config.sha256_of(cat), deltas=[e["id"] for e in chosen], text="\n".join(e["text"].strip() for e in chosen),
                           entries=[{"id": e["id"], "label": e.get("label") or e["id"].rsplit(".", 1)[-1], "text": e["text"].strip()} for e in chosen])
     # ---- practice layer
-    shipped = load_practice_catalog(domain)
+    catalog = load_practice_catalog(domain, ws)
     concerns = list(classification.get("concerns", []))
-    validate_concerns(concerns, domain)
+    validate_concerns(concerns, domain, ws)
     merged = effective(ws, domain)
     cap_wants_subagents = bool(profile.get("subagents"))
     # practice entries render when declared (attributed) or measured (qualified); candidates only in evaluation runs
@@ -113,17 +193,17 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
             situational.append((e.get("priority", 100), order, e))
     core.sort(key=lambda t: t[:2])
     situational.sort(key=lambda t: t[:2])
-    cap = int(shipped["render"]["core_cap"])
+    cap = int(catalog["render"]["core_cap"])
     # the core cap governs the shipped default; candidates under evaluation are appended so that an evaluation
     # arm equals the default arm plus the candidates (nothing displaced, nothing hidden)
     stable = [t for t in core if t[2].get("status", "attributed") != "candidate"]
     candidates = [t for t in core if t[2].get("status", "attributed") == "candidate"]
     kept_core, dropped = stable[:cap] + candidates, [e["id"] for _, _, e in stable[cap:]]
     selected = [e for _, _, e in kept_core + situational]
-    heading = str(shipped["render"].get("heading", "Rules:"))
+    heading = str(catalog["render"].get("heading", "Rules:"))
     practice_text = (heading + "\n" + "\n".join(f"- {_label(e)}: {' '.join(e['text'].split())}" for e in selected)) if selected else ""
-    layers = _layers(ws)
-    practice_block = {"domain": domain, "shipped_sha256": config.sha256_of(shipped), "layers": [{k: v for k, v in l.items() if k != "entries"} for l in layers],
+    layers = _layers(ws, f"practice/{domain}.yaml")
+    practice_block = {"domain": domain, "shipped_sha256": config.sha256_of(config.load_yaml_text((_DIR / "practice" / f"{domain}.yaml").read_text(encoding="utf-8"))), "effective_sha256": config.sha256_of(catalog), "layers": [{k: v for k, v in l.items() if k != "document"} for l in layers],
                       "selected": [e["id"] for e in selected], "matched_concerns": [c for c in concerns if any(c in e.get("concerns", []) for e in selected)],
                       "dropped_by_budget": dropped, "text": practice_text,
                       "entries": [{"id": e["id"], "label": _label(e), "text": " ".join(e["text"].split())} for e in selected]}

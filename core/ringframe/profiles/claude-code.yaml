@@ -5,8 +5,30 @@ host: claude-code
 version_range: null
 surface: native-tui
 invocation_prefix: '/rf:'
+routing:
+  precedence:
+  - native_goal
+  - native_plan
+  - native_direct
+  guidance:
+  - Infer the intended outcome, required continuation, and effects from the source intent; users do not
+    need to name a native command.
+  - Honor an explicit supported capability choice and preserve planning-only or review-only scope. Never
+    invent a completion condition or additional permissions.
+  - Compare capability selection guidance; use precedence when multiple capabilities fit. Continuing objectives
+    take precedence over the general planning default for work with effects.
+  - Large scope, the word fully, or write effects alone do not imply persistent continuation. Explain
+    material uncertainty in route gaps and let the user revise the proposed route.
+  - A declared capability is a RingFrame integration contract, not proof that the current host exposes
+    it. Follow its delivery mode and limitations; report unavailable tools or rejected commands without
+    claiming activation.
 capabilities:
 - id: native_plan
+  selection: A plan or analysis before implementation, or bounded work with effects when the user has not
+    requested immediate execution. Do not prefer this general default over a fitting continuing objective
+    or dedicated review.
+  sources:
+  - https://code.claude.com/docs/en/tools-reference
   purpose: read-only exploration and a reviewable plan before effects
   activation:
     mechanism: capability_activate
@@ -31,6 +53,11 @@ capabilities:
   - ToolSearch denial blocks discovery of EnterPlanMode
   - native acceptance is not execution or completion
 - id: native_direct
+  selection: An answer, read-only investigation, or review without a fitting dedicated capability; also
+    work the user explicitly asks to execute immediately or without planning. Effects listed in requires_explicit_request_for_effects
+    require that explicit source intent.
+  sources:
+  - https://code.claude.com/docs/en/tools-reference
   purpose: continue immediately under normal permissions
   activation:
     mechanism: null
@@ -55,6 +82,11 @@ capabilities:
   - external_effect
   - workspace_write
 - id: native_goal
+  selection: A continuing objective with a user-supplied terminal condition, where work should continue
+    until that condition is met. Infer this from the intended continuation, without requiring the word goal.
+    Do not select for a plan-only or review-only request.
+  sources:
+  - https://code.claude.com/docs/en/goal
   purpose: Claude Code persistent goal, entered by the person with /goal
   activation: {mechanism: null, tool: null}
   confirmation: {tool: AskUserQuestion}
@@ -66,7 +98,8 @@ capabilities:
   receipt: null
   qualification: {id: null}
   limitations:
-  - /goal is user-entered in the TUI; no model-callable transition exists
+  - This profile maps Goal to user submission in the TUI
+  - Goal requires workspace trust and hooks permitted by effective host settings
   - submission is observed only through the host prompt hook
 subagents: true
 fallback: human_handoff

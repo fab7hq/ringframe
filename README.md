@@ -5,86 +5,43 @@ work and your decision to accept it. It runs inside Claude Code and Codex.
 
 | Command | Purpose |
 | --- | --- |
-| **Ask** | Turn your intent into a prompt you review and confirm. |
-| **Eval** | Judge the work against all open Asks; report a verdict and confidence. |
-| **Seal** | Close those Asks with your decision and a local receipt. |
+| [**Ask**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/ask.md) | Turn your intent into a prompt you review and confirm. |
+| [**Eval**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/eval.md) | Review the work against open Asks with independent model judges. |
+| [**Seal**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/seal.md) | Close those Asks with your decision and a local receipt. |
 
-Your agent keeps control of its tools, permissions, and workflow. RingFrame
-stores prompts and records in `.fab7/rf/` in your project, ignored by Git by
-default.
+Continue working with your agent between commands. Run Eval when you want a
+review, and Seal when you decide to close the work. Prompts, reviews, and
+receipts stay in your project's `.fab7/rf/`, ignored by Git by default.
 
-## Install
+## Installation
 
-Requires Python 3.11+, uv, Git, and a POSIX environment (macOS or Linux).
-Install the CLI first, then choose your host plugin.
-
-Install the latest release:
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/), Python
+3.11+, Git, and a POSIX shell on macOS or Linux.
 
 ```sh
-uv tool install ringframe
+curl -fsSL https://raw.githubusercontent.com/fab7hq/ringframe/main/install.sh | sh
 ```
 
-Upgrade an existing unpinned installation with `uv tool upgrade ringframe`.
-For a specific version, open its
-[repository release/tag](https://github.com/fab7hq/ringframe/releases)
-and follow that release's version-specific CLI and plugin instructions.
+This installs the latest CLI and initializes your global delta configuration
+in `~/.fab7/rt/deltas/`. Run it again to upgrade; existing configuration is
+preserved. Then install the plugin for your harness using its guide below.
 
-### Claude Code
+For a specific version, use the instructions at its
+[repository release tag](https://github.com/fab7hq/ringframe/releases).
+To build and install a local checkout, run `./install.sh --source` from it.
 
-```sh
-claude plugin marketplace add fab7hq/ringframe
-claude plugin install rf@ringframe
-```
+## Use with your harness
 
-### Codex
+Each guide covers prerequisites, plugin installation, first use, and updates.
 
-```sh
-codex plugin marketplace add fab7hq/ringframe
-codex plugin add rf@ringframe
-```
+- [Claude Code](https://github.com/fab7hq/ringframe/blob/main/docs/usage/claude.md)
+- [Codex](https://github.com/fab7hq/ringframe/blob/main/docs/usage/codex.md)
 
-Start a new host session after installation. In Codex, open `/hooks` and trust
-the `rf@ringframe` prompt hook. Ask and Seal require the native
-`request_user_input` tool. If unavailable, use a host mode that exposes it;
-on hosts offering `default_mode_request_user_input`, you can enable that
-feature with `codex features enable default_mode_request_user_input`.
-RingFrame does not change host settings.
+## Customization
 
-Upgrade the CLI and both installed host plugins together. Plugin installation
-does not enable automatic updates; use your host's marketplace/plugin update flow.
+Deltas tailor the rules Ask uses to compose your prompt. Set personal defaults
+or override them for a project. See [delta configuration](https://github.com/fab7hq/ringframe/blob/main/docs/architecture/delta.md)
+for examples.
 
-## Use
-
-Open your project in the host and invoke the skills explicitly:
-
-| Action | Claude Code | Codex |
-| --- | --- | --- |
-| Start work | `/rf:ask add a health endpoint with tests` | `$rf:ask add a health endpoint with tests` |
-| Review work | `/rf:eval` | `$rf:eval` |
-| Accept work | `/rf:seal accepted` | `$rf:seal accepted` |
-
-Ask shows the generated prompt for confirmation. Claude Code can enter Plan
-mode after approval. For Codex Plan or Goal routes, submit the complete
-`prompt.txt` that RingFrame provides. Direct routes continue in the same turn.
-
-Continue ordinary conversation as needed, and run Eval again when you want
-another review. Eval uses model judges; it does not run your project's tests.
-Seal accepts `accepted`, `rejected`, `deferred`, or `abandoned`, with or without
-an Eval. An accepted Seal records your decision; it does not certify correctness.
-
-To inspect local records:
-
-```sh
-ringframe ask list --json
-ringframe eval list --json
-ringframe ledger verify --json
-```
-
-## Qualification limits
-
-Formal host qualification is incomplete. The documentation describes the
-implemented CLI and intended skill behavior; it does not establish host
-reliability or improved results over a native workflow.
-
-See the [documentation](https://github.com/fab7hq/ringframe/blob/main/docs/product.md), [contributor instructions](https://github.com/fab7hq/ringframe/blob/main/AGENTS.md),
-and [security policy](https://github.com/fab7hq/ringframe/blob/main/SECURITY.md). Licensed under [Apache 2.0](https://github.com/fab7hq/ringframe/blob/main/LICENSE).
+[Product reference](https://github.com/fab7hq/ringframe/blob/main/docs/product.md) · [Contributing](https://github.com/fab7hq/ringframe/blob/main/AGENTS.md) ·
+[Security](https://github.com/fab7hq/ringframe/blob/main/SECURITY.md) · [Apache 2.0](https://github.com/fab7hq/ringframe/blob/main/LICENSE)

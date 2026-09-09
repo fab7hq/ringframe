@@ -3,13 +3,15 @@ import os
 from ringframe import workspace
 
 
-def test_root_is_git_toplevel(repo):
+def test_nested_project_keeps_its_own_root(repo):
     sub = repo / "a" / "b"
     sub.mkdir(parents=True)
     ws = workspace.resolve(cwd=sub)
-    assert ws.root == repo.resolve()
-    assert ws.rule == "git_toplevel"
-    assert ws.rf_dir == repo.resolve() / ".fab7" / "rf"
+    assert ws.root == sub.resolve()
+    assert ws.rule == "cwd"
+    ws.ensure()
+    assert ws.rf_dir == sub.resolve() / ".fab7" / "rf"
+    assert not (repo / ".fab7").exists()
 
 
 def test_root_falls_back_to_cwd(tmp_path):

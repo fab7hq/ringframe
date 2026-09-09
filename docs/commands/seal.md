@@ -9,8 +9,10 @@ Asks, including `deferred`. Seal does not merge, publish, deploy, or certify wor
 
 ## Decision and authority
 
-The skill is instructed to confirm the disposition, open Ask titles, and Eval
-summary once. The CLI records the supplied decision without independently
+The skill is instructed to confirm the disposition, open Ask titles, Eval
+summary, and any note. It asks again only when the response changes the decision
+without clearly confirming it or leaves it ambiguous. A note alone is not
+confirmation. The CLI records the supplied decision without independently
 verifying that host interaction.
 An optional note is recorded verbatim. The CLI defaults to the latest completed
 Eval that shares at least one open Ask, or no Eval if none exists. The receipt
@@ -23,8 +25,8 @@ and subject kind; an expiry is checked when supplied. These are caller-supplied
 identities and local grants, not host authentication.
 
 The [Claude skill](../../plugins/claude/skills/seal/SKILL.md) requests confirmation
-with `AskUserQuestion`. The [Codex skill](../../plugins/codex/skills/seal/SKILL.md)
-requires `request_user_input` and stops without creating a Seal if that tool is
+with `AskUserQuestion`; the [Codex skill](../../plugins/codex/skills/seal/SKILL.md)
+uses `request_user_input`. Both stop without creating a Seal if their tool is
 missing, its call is rejected, or the chooser is cancelled or unanswered.
 
 | Refusal code | Reason |

@@ -39,7 +39,7 @@ def test_capability_lookup():
 def test_codex_profile_is_handoff_only_with_request_user_input():
     p = profiles.load("codex")
     assert p["profile_id"] == "codex" and p["confirmation"] == {"tool": "request_user_input", "requires_feature": None}
-    assert {c["id"] for c in p["capabilities"]} == {"native_plan", "native_goal", "native_direct"}
+    assert {c["id"] for c in p["capabilities"]} == {"native_plan", "native_goal", "native_review", "native_direct"}
     for c in p["capabilities"]:
         if c["id"] != "native_direct":
             assert c["delivery_mode"] == "human_handoff" and c["activation"]["mechanism"] is None

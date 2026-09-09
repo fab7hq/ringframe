@@ -18,6 +18,7 @@ def now() -> str:
 
 
 def _dir(ws: Workspace, host: str, session: str):
+    ws.ensure()
     d = ws.rf_dir / "sessions" / host / session
     d.mkdir(parents=True, exist_ok=True)
     return d

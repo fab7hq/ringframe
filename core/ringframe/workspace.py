@@ -1,7 +1,6 @@
 """Workspace root resolution and the .fab7/rf/ directory."""
 
 import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +14,10 @@ class Workspace:
     def rf_dir(self) -> Path:
         return self.root / ".fab7" / "rf"
 
+    @property
+    def rt_dir(self) -> Path:
+        return self.root / ".fab7" / "rt"
+
     def ensure(self) -> "Workspace":
         self.rf_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.rf_dir, 0o700)
@@ -23,6 +26,8 @@ class Workspace:
             ignore.write_text("*\n")
         for sub in ("tmp", "asks", "evals", "seals", "sessions"):
             (self.rf_dir / sub).mkdir(exist_ok=True)
+        from ringframe import deltas
+        deltas.initialize(self.rt_dir)
         return self
 
     def describe(self) -> dict:
@@ -32,10 +37,13 @@ class Workspace:
 def resolve(cwd: Path | None = None, explicit: Path | None = None) -> Workspace:
     if explicit is not None:
         return Workspace(Path(explicit).resolve(), "explicit")
-    cwd = Path(cwd or os.getcwd())
-    try:
-        out = subprocess.run(["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
-                             capture_output=True, text=True, check=True).stdout.strip()
-        return Workspace(Path(out).resolve(), "git_toplevel")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return Workspace(cwd.resolve(), "cwd")
+    return Workspace(Path(cwd or os.getcwd()).resolve(), "cwd")
+
+
+def initialize_user() -> dict:
+    """Initialize global delta catalogs; profiles stay in the installed package."""
+    from ringframe import deltas
+
+    root = deltas.user_root()
+    paths = deltas.initialize(root, global_scope=True)
+    return {"rt_dir": str(root), "deltas": paths}

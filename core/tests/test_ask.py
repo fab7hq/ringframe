@@ -46,7 +46,7 @@ def test_compile_publishes_two_artifacts_and_one_event(repo):
     assert not (ws.rf_dir / "tmp" / "stage-1").exists()
     ev, = store.events(ws)
     assert ev["type"] == "ask.compiled" and ev["id"] == out["ask_id"]
-    assert ev["data"]["host"]["profile_id"] == "claude-code" and ev["data"]["host"]["workspace"]["rule"] == "git_toplevel"
+    assert ev["data"]["host"]["profile_id"] == "claude-code" and ev["data"]["host"]["workspace"]["rule"] == "cwd"
     assert store.verify(ws) == []
     assert ask.show(ws)["outcome"] == "compiled" and ask.show(ws)["submission"] == "unobserved"
 
@@ -473,4 +473,22 @@ def test_old_profile_id_does_not_break_submission_review_or_seal(repo, monkeypat
     receipt = seal.create(ws, "deferred")
     assert seal.check(ws, receipt["seal_id"])["fresh"]
     assert (ws.rf_dir / "ledger.jsonl").read_bytes().startswith(before)
+    assert store.verify(ws) == []
+
+
+def test_codex_review_compiles_and_hands_off_from_profile(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    d = stage(ws)
+    (d / "prompt.txt").unlink()
+    (d / "body.txt").write_text("Review the current diff for regressions.\n")
+    out = compile_(ws, staged=d, capability="native_review", host={"name": "codex", "surface": "native-tui"},
+                   classification={**CLS, "task": ["review"], "result": "evidence"})
+    text = ask.prompt_text(ws, out["ask_id"])
+    assert text.startswith("/review Review the current diff for regressions.")
+    ask.confirm(ws, out["ask_id"])
+    _, delivery = ask.delivery_handoff(ws, out["ask_id"])
+    assert delivery["state"] == "handoff_ready"
+    event = [e for e in store.events(ws) if e["type"] == "ask.compiled"][-1]
+    assert event["data"]["host"]["profile_sha256"] == profiles.sha256("codex")
+    assert event["data"]["selected_capability"] == "native_review"
     assert store.verify(ws) == []
