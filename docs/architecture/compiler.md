@@ -1,7 +1,10 @@
 # Prompt compiler
 
 The CLI selects instruction deltas from YAML catalogs; the skill composes them
-into a task brief. Every candidate stages `source.txt` plus exactly one form:
+into one optimized task brief followed by `Rules:`. Original user wording is
+stored separately in `source.txt`, not prepended to the optimized brief.
+The CLI adds the capability prefix only; it never prepends `source.txt`.
+Every candidate stages `source.txt` plus exactly one form:
 
 | File | Processing | `compiler.source` |
 | --- | --- | --- |
@@ -50,8 +53,8 @@ semantic suitability remains a model decision, evaluated probabilistically.
 
 ## Catalogs
 
-The CLI reads global catalogs in `~/.fab7/rt/deltas/` and merges project
-configuration from `.fab7/rt/deltas/`. Project fields win conflicts. Practice
+The CLI reads global catalogs in `~/.fab7/rf/deltas/` and merges project
+configuration from `.fab7/rf/deltas/`. Project fields win conflicts. Practice
 rules match task classifications; host rules match capability IDs.
 
 See [delta configuration](delta.md) for file layouts, extension fields, merge

@@ -10,9 +10,9 @@ The [compiler](compiler.md) owns prompt composition and provenance.
 
 | Catalog | Global file | Project file |
 | --- | --- | --- |
-| Practices | `~/.fab7/rt/deltas/practice/software-development.yaml` | `.fab7/rt/deltas/practice/software-development.yaml` |
-| Claude Code | `~/.fab7/rt/deltas/claude-code.yaml` | `.fab7/rt/deltas/claude-code.yaml` |
-| Codex | `~/.fab7/rt/deltas/codex.yaml` | `.fab7/rt/deltas/codex.yaml` |
+| Practices | `~/.fab7/rf/deltas/practice/software-development.yaml` | `.fab7/rf/deltas/practice/software-development.yaml` |
+| Claude Code | `~/.fab7/rf/deltas/claude-code.yaml` | `.fab7/rf/deltas/claude-code.yaml` |
+| Codex | `~/.fab7/rf/deltas/codex.yaml` | `.fab7/rf/deltas/codex.yaml` |
 
 The installer or `ringframe init --global` seeds missing global files from the
 package. A delta read also initializes missing global catalogs. Existing files
@@ -21,13 +21,16 @@ new packaged defaults. Run `ringframe init` from a consumer project to create
 its matching, initially empty files. First use also initializes them.
 
 Configuration is read on each CLI invocation. Profiles remain package-owned;
-Ask/Eval/Seal records remain in `.fab7/rf/`. Initialization migrates the former
-`defaults/deltas`, `rf/deltas`, and single `deltas.yml`/`deltas.yaml` overrides
-into the current layout without relocating records.
+Ask/Eval/Seal records share `.fab7/rf/` with the project delta catalogs.
+Only the paths above are read; legacy configuration layouts are not migrated.
 
 Extend the existing catalogs. Dropping an arbitrarily named YAML file into the
 directory does not register a new host, domain, or selection rule. The shipped
 Ask workflow uses the `software-development` practice domain.
+
+Use block-style mappings with two-space indentation and compact lists for short
+vocabularies, as in the examples below. Project files are partial overrides of
+the same catalog structure.
 
 ## Merge rules
 
@@ -66,6 +69,7 @@ the header and only needs the fields it changes.
 ```yaml
 schema: ringframe.deltas/1
 scope: practice
+domain: software-development
 render:
   heading: 'Rules:'
   core_cap: 5
@@ -104,9 +108,11 @@ file. Combine it with other overrides in a single `entries` list.
 | `concerns` | List of concern names; a situational entry needs at least one match. |
 | `requires.host_capability` | Currently recognizes `subagents`; excludes the entry when the profile does not declare sub-agent support. This does not prove the tool is exposed. |
 
-Keep `render.heading` as `Rules:` for the shipped composed-prompt workflow:
-its audit expects that heading. `render.core_cap` defaults to `5`; use a
-nonnegative integer. It caps core entries only, not situational or host rules.
+`render` supports only `heading` and `core_cap`, shown above. Keep `heading` as
+`Rules:` for the shipped composed-prompt workflow; its audit expects that heading.
+`core_cap` defaults to `5`; use a nonnegative integer. It caps core entries only,
+not situational or host rules.
+
 Metadata such as `source`, `why`, and `evidence` describes a rule but does not
 run a check or change practice matching.
 
@@ -167,25 +173,31 @@ render command does not enable candidate rules in the shipped Ask workflow.
 ## Host catalog
 
 Host entries match a profile capability exactly, rather than practice task
-filters. Extend an existing host catalog with a new entry:
+filters. A full host catalog has this structure:
 
 ```yaml
+schema: ringframe.deltas/1
+scope: host
+host: claude-code
 entries:
   - id: claude-code.native_goal.task_workflow
     label: Task workflow
-    capability: native_goal
     status: candidate
+    capability: native_goal
     text: >-
       For each task, analyze the code, implement using TDD, and review the
       change before advancing toward the goal's completion criteria.
     matrix_ref: https://code.claude.com/docs/en/goal
 ```
 
-A full host catalog also has `schema: ringframe.deltas/1`, `scope: host`, and
-`host: claude-code` or `host: codex`. Each entry requires `id`, `capability`,
-`text`, `matrix_ref`, and `status`. `label` is optional; `enabled: false`
-excludes it. Valid statuses are `candidate`, `qualified`, and `retired`;
+To extend a project catalog, copy only its `entries` section. Use `host: codex`
+and Codex capability IDs when authoring a full Codex catalog.
+
+Each host entry requires `id`, `capability`, `text`, `matrix_ref`, and `status`.
+`label` is optional and defaults to the final component of `id`; `enabled: false`
+excludes the entry. Valid statuses are `candidate`, `qualified`, and `retired`;
 only `qualified` renders by default. The shipped host entries are candidates.
+Optional `why` and `evidence` fields describe provenance, not executable checks.
 
 Host entries retain merged catalog order. Practice fields such as `priority`,
 `tier`, `applies_to`, and `concerns` do not control host selection. `matrix_ref`

@@ -229,7 +229,7 @@ def test_global_init_materializes_deltas_and_preserves_customizations(repo, tmp_
     monkeypatch.setenv("HOME", str(home))
     code, out, _ = run(repo, "init", "--global", "--json", monkeypatch=monkeypatch)
     assert code == 0
-    root = home / ".fab7/rt"
+    root = home / ".fab7/rf"
     assert not (repo / ".fab7").exists()
     for rel in ["deltas/codex.yaml", "deltas/claude-code.yaml", "deltas/practice/software-development.yaml"]:
         assert (root / rel).read_bytes() == (files("ringframe") / rel).read_bytes()
@@ -267,7 +267,7 @@ def test_compile_reads_merged_ledger_delta_files(repo, monkeypatch):
     from ringframe import deltas, workspace
     ws = workspace.resolve(cwd=repo).ensure()
     workspace.initialize_user()
-    local = ws.rt_dir / "deltas/practice/software-development.yaml"
+    local = ws.rf_dir / "deltas/practice/software-development.yaml"
     local.write_text("concerns: [project_special]\nrender: {core_cap: 1}\nentries: [{id: practice.kiss, text: Use the project setting.}]\n")
     cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["project_special"]})
     stage = repo / "stage"
@@ -299,6 +299,6 @@ def test_profile_cli_exposes_routing_and_capability_sources(repo, monkeypatch):
 def test_delta_listing_exposes_merged_concern_vocabulary(repo, monkeypatch):
     from ringframe import workspace
     ws = workspace.resolve(cwd=repo).ensure()
-    (ws.rt_dir / "deltas/practice/software-development.yaml").write_text("concerns: [team_boundary]\n")
+    (ws.rf_dir / "deltas/practice/software-development.yaml").write_text("concerns: [team_boundary]\n")
     code, out, _ = run(repo, "deltas", "list", "--json", monkeypatch=monkeypatch)
     assert code == 0 and out["concerns"] == ["team_boundary"]

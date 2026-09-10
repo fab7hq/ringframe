@@ -8,12 +8,12 @@ ledger; the enclosing Git repository does not determine its location. Use
 Eval scopes Git changes and subject digests to this project.
 
 `ringframe init` creates project records in `.fab7/rf/` and empty delta
-catalogs in `.fab7/rt/deltas/`. `ringframe init --global` creates populated
-catalogs in `~/.fab7/rt/deltas/`, preserving existing edits. Profiles remain
+catalogs in `.fab7/rf/deltas/`. `ringframe init --global` creates populated
+catalogs in `~/.fab7/rf/deltas/`, preserving existing edits. Profiles remain
 package-owned. Global storage does not collect project events. Existing ledgers
 are never automatically moved or merged.
 
-Initialization makes both project directories self-ignoring and owner-only.
+Initialization makes the project `.fab7/rf/` directory self-ignoring and owner-only.
 
 ## Files
 
@@ -21,6 +21,7 @@ Paths below are relative to `.fab7/rf/`.
 
 | Path | Contents |
 | --- | --- |
+| `deltas/` | Project overrides merged over global catalogs in `~/.fab7/rf/deltas/` |
 | `ledger.jsonl` | Append-only canonical JSON events |
 | `lock` | Advisory lock around the final append |
 | `asks/<ask_id>/source.txt` | Published source intent for one candidate |

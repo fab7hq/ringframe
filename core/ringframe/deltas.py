@@ -1,14 +1,10 @@
 """Delta catalogs: host deltas keyed by (host, capability); practice deltas keyed by classification.
 
-Authored as YAML, rendered deterministically by the CLI. The model writes the task body; it never chooses or words
-the standing rules. Verification of the work is rf:eval's, so no delta carries a check."""
+The CLI selects YAML rules; the model adapts them to the task. Deltas guide the work but do not run checks."""
 
 import os
-import shutil
 from importlib import resources
 from pathlib import Path
-
-import yaml
 
 from ringframe import config
 
@@ -25,7 +21,7 @@ def host_catalog_names() -> list[str]:
 
 
 def user_root() -> Path:
-    return Path.home() / ".fab7" / "rt"
+    return Path.home() / ".fab7" / "rf"
 
 
 def catalog_paths() -> list[Path]:
@@ -37,25 +33,7 @@ def initialize(root: Path, *, global_scope: bool = False) -> list[str]:
     """Seed global catalogs or empty project files; preserve existing configuration."""
     root.mkdir(parents=True, exist_ok=True)
     os.chmod(root, 0o700)
-    legacy = root.parent / "rf"
     paths = catalog_paths()
-    # Move old delta catalogs before seeding. New-path values take precedence.
-    for old_dir in (legacy / "defaults/deltas", legacy / "deltas"):
-        if old_dir.exists():
-            for source in sorted(old_dir.rglob("*.yaml")):
-                target = root / "deltas" / source.relative_to(old_dir)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if target.exists():
-                    merged = config.merge(config.load_yaml(source, allow_empty=True), config.load_yaml(target, allow_empty=True))
-                    target.write_text(yaml.safe_dump(merged, sort_keys=False, allow_unicode=True), encoding="utf-8")
-                    source.unlink()
-                else:
-                    source.replace(target)
-            for directory in sorted(old_dir.rglob("*"), reverse=True):
-                if directory.is_dir() and not any(directory.iterdir()):
-                    directory.rmdir()
-            if not any(old_dir.iterdir()):
-                old_dir.rmdir()
     for rel in paths:
         target = root / "deltas" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -64,28 +42,7 @@ def initialize(root: Path, *, global_scope: bool = False) -> list[str]:
                 f.write((_DIR / rel.as_posix()).read_bytes() if global_scope else b"")
         except FileExistsError:
             pass
-    # Fold the former practice-only override into its catalog before removing it.
-    for old in (legacy / "deltas.yml", legacy / "deltas.yaml"):
-        if old.exists():
-            patch = config.load_yaml(old, allow_empty=True)
-            _check(not patch or patch.get("schema") == SCHEMA, f"{old}: schema must be {SCHEMA}")
-            if patch.get("entries") == []:
-                patch.pop("entries")  # The former empty override list meant inherit.
-            target = root / "deltas/practice/software-development.yaml"
-            merged = config.merge(config.load_yaml(target, allow_empty=True), patch)
-            target.write_text(yaml.safe_dump(merged, sort_keys=False, allow_unicode=True), encoding="utf-8")
-            old.unlink()
-    if global_scope:
-        # Profiles remain package-owned; these were only exported reference copies.
-        for directory in (legacy / "defaults/profiles", legacy / "profiles"):
-            if directory.exists():
-                shutil.rmtree(directory)
-        defaults = legacy / "defaults"
-        if defaults.is_dir() and not any(defaults.iterdir()):
-            defaults.rmdir()
-        if legacy.is_dir() and not any(legacy.iterdir()):
-            legacy.rmdir()
-    else:
+    if not global_scope:
         ignore = root / ".gitignore"
         if not ignore.exists():
             ignore.write_text("*\n", encoding="utf-8")
@@ -99,7 +56,7 @@ def _layers(ws=None, relative: str = "practice/software-development.yaml") -> li
         initialize(global_root, global_scope=True)
     locations = [("user", path)]
     if ws is not None:
-        locations.append(("workspace", ws.rt_dir / "deltas" / relative))
+        locations.append(("workspace", ws.rf_dir / "deltas" / relative))
     out = []
     for scope, path in locations:
         if path.exists():

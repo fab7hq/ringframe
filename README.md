@@ -23,8 +23,8 @@ curl -fsSL https://raw.githubusercontent.com/fab7hq/ringframe/main/install.sh | 
 ```
 
 This installs the latest CLI and initializes your global delta configuration
-in `~/.fab7/rt/deltas/`. Run it again to upgrade; existing configuration is
-preserved. Then install the plugin for your harness using its guide below.
+in `~/.fab7/rf/deltas/`. Run it again to upgrade; existing files at these paths
+are preserved. Then install the plugin for your harness using its guide below.
 
 For a specific version, use the instructions at its
 [repository release tag](https://github.com/fab7hq/ringframe/releases).

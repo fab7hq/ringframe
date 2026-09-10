@@ -14,10 +14,6 @@ class Workspace:
     def rf_dir(self) -> Path:
         return self.root / ".fab7" / "rf"
 
-    @property
-    def rt_dir(self) -> Path:
-        return self.root / ".fab7" / "rt"
-
     def ensure(self) -> "Workspace":
         self.rf_dir.mkdir(parents=True, exist_ok=True)
         os.chmod(self.rf_dir, 0o700)
@@ -27,7 +23,7 @@ class Workspace:
         for sub in ("tmp", "asks", "evals", "seals", "sessions"):
             (self.rf_dir / sub).mkdir(exist_ok=True)
         from ringframe import deltas
-        deltas.initialize(self.rt_dir)
+        deltas.initialize(self.rf_dir)
         return self
 
     def describe(self) -> dict:
@@ -46,4 +42,5 @@ def initialize_user() -> dict:
 
     root = deltas.user_root()
     paths = deltas.initialize(root, global_scope=True)
-    return {"rt_dir": str(root), "deltas": paths}
+    # Retain the 0.0.2 JSON key as an alias; all configuration lives under rf.
+    return {"rf_dir": str(root), "rt_dir": str(root), "deltas": paths}

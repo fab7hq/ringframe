@@ -182,7 +182,7 @@ def _dispatch(ns, ws) -> tuple[int, object]:
         if ns.global_init:
             return 0, workspace.initialize_user()
         ws.ensure()
-        return 0, {"rf_dir": str(ws.rf_dir), "rt_dir": str(ws.rt_dir), **ws.describe()}
+        return 0, {"rf_dir": str(ws.rf_dir), "rt_dir": str(ws.rf_dir), **ws.describe()}
     if ns.cmd == "profile":
         prof = profiles.for_host({"name": ns.host, "version": ns.host_version})
         name = prof["host"] or "unknown"

@@ -80,10 +80,11 @@ version or session ID: the CLI resolves them from the plugin hook's capture.
    --classification '<json>' --json` with the classification above. The CLI
    selects the directives that apply to this Ask (`host.entries`,
    `practice.entries`); you never choose, drop, or add rules.
-2. Write the prompt in two parts. First, one brief for this task, the way a
-   senior engineer briefs a peer: start from the exact source intent and name
-   the artifacts, paths, and constraints it names; add nothing else. Then a
-   line `Rules:` followed by one line per supplied directive you apply:
+2. Write the prompt in two parts. First, one concise, optimized task brief
+   preserving the source intent's artifacts, paths, and constraints. Keep the
+   original wording only in `source.txt`; do not prepend or quote it before
+   the optimized brief. Then a line `Rules:` followed by one line per supplied
+   directive you apply:
    `- <label>: <that directive applied to this task's specifics>`, using the
    `label` values the CLI returned (several labels may share one line when
    one sentence applies them together). Every label must come from the

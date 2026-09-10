@@ -13,7 +13,7 @@ def test_shipped_catalogs_validate_and_have_provenance():
         for e in cat["entries"]:
             assert e["id"].startswith(f"{name}.{e['capability']}.") and e["matrix_ref"] and e["status"] in deltas.HOST_STATUS
     prac = deltas.load_practice_catalog("software-development")
-    assert prac["scope"] == "practice" and prac["render"]["style"] == "labelled-rules" and prac["render"]["explain"] == "never"
+    assert prac["scope"] == "practice" and prac["render"] == {"heading": "Rules:", "core_cap": 5}
     ids = [e["id"] for e in prac["entries"]]
     assert len(ids) == len(set(ids)) and all(e["principle"] and e["text"].strip() for e in prac["entries"])
     for e in prac["entries"]:
@@ -54,13 +54,17 @@ def test_practice_selection_is_faceted_tiered_and_budgeted(repo, monkeypatch, tm
 def test_user_and_workspace_layers_override_by_id(repo, monkeypatch, tmp_path):
     home = tmp_path / "home"  # the repo fixture is tmp_path itself; the user layer must be a different tree
     monkeypatch.setenv("HOME", str(home))
-    (home / ".fab7" / "rf").mkdir(parents=True)
-    (home / ".fab7/rf/deltas.yaml").write_text(
-        "schema: ringframe.deltas/1\nscope: practice\nentries:\n"
-        "  - id: practice.kiss\n    text: Keep it plain.\n"
-        "  - id: practice.team.commit_style\n    tier: core\n    applies_to: {task: [implement]}\n    text: One commit per item, message names the item.\n")
+    import yaml
+    workspace.initialize_user()
+    catalog = home / ".fab7/rf/deltas/practice/software-development.yaml"
+    doc = config.load_yaml(catalog)
+    next(e for e in doc["entries"] if e["id"] == "practice.kiss")["text"] = "Keep it plain."
+    doc["entries"].append({"id": "practice.team.commit_style", "tier": "core",
+                           "applies_to": {"task": ["implement"]},
+                           "text": "One commit per item, message names the item."})
+    catalog.write_text(yaml.safe_dump(doc))
     ws = workspace.resolve(cwd=repo).ensure()
-    (ws.root / ".fab7/rt/deltas/practice/software-development.yaml").write_text("schema: ringframe.deltas/1\nscope: practice\nentries:\n  - id: practice.yagni\n    enabled: false\n")
+    (ws.root / ".fab7/rf/deltas/practice/software-development.yaml").write_text("schema: ringframe.deltas/1\nscope: practice\nentries:\n  - id: practice.yagni\n    enabled: false\n")
     r = deltas.render(ws, profiles.load("codex"), "native_plan", IMPL)
     assert "Keep it plain." in r["text"] and "practice.yagni" not in r["practice"]["selected"]
     assert "practice.team.commit_style" in r["practice"]["selected"]
