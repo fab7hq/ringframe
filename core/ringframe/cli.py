@@ -73,7 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--authority", choices=["interactive", "preauthorized"], default="interactive")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("init").add_argument("--global", dest="global_init", action="store_true", help="initialize global delta catalogs only")
+    ini = sub.add_parser("init")
+    ini.add_argument("--global", dest="global_init", action="store_true", help="install the global configuration instead of this project's")
+    ini.add_argument("--from", dest="source", type=Path, help="install from a local config directory instead of downloading")
+    sub.add_parser("sync").add_argument("--from", dest="source", type=Path, help="install from a local config directory instead of downloading")
 
     prof = sub.add_parser("profile").add_subparsers(dest="sub", required=True)
     ps = prof.add_parser("show")
@@ -142,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     ls.add_argument("--capability")
     ls.add_argument("--effective", action="store_true", help="merged practice deltas with the layer each came from")
     ls.add_argument("--domain", default=deltas.DEFAULT_DOMAIN)
+    dl.add_parser("domains", help="installed practice domains, their descriptions and concern vocabularies")
     rd = dl.add_parser("render")
     rd.add_argument("--host", required=True)
     rd.add_argument("--host-version", default="")
@@ -180,9 +184,12 @@ def _dispatch(ns, ws) -> tuple[int, object]:
     actor = _actor(ns.actor, ns.authority)
     if ns.cmd == "init":
         if ns.global_init:
-            return 0, workspace.initialize_user()
+            return 0, workspace.install_config(ns.source)
+        workspace.require_git(ws)
         ws.ensure()
         return 0, {"rf_dir": str(ws.rf_dir), "rt_dir": str(ws.rf_dir), **ws.describe()}
+    if ns.cmd == "sync":
+        return 0, workspace.install_config(ns.source)
     if ns.cmd == "profile":
         prof = profiles.for_host({"name": ns.host, "version": ns.host_version})
         name = prof["host"] or "unknown"
@@ -222,6 +229,8 @@ def _dispatch(ns, ws) -> tuple[int, object]:
             return 0, ask.show(ws, ask_id=ns.ask, session=ns.session)
         return 0, ask.resolve(ws, session=ns.session, kind=ns.kind)
     if ns.cmd == "deltas":
+        if ns.sub == "domains":
+            return 0, {"domains": deltas.domains(ws)}
         if ns.sub == "list":
             if ns.effective:
                 return 0, deltas.effective(ws, ns.domain)
@@ -297,7 +306,7 @@ def main(argv=None) -> int:
     except Refused as exc:
         _emit({"error": "seal.refused", "refusal_codes": exc.codes}, ns.json)
         return 2
-    except LedgerError as exc:
+    except (LedgerError, workspace.WorkspaceError) as exc:
         _emit({"error": exc.code, "detail": exc.detail}, ns.json)
         return 2
     except config.ConfigError as exc:

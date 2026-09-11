@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ringframe"
-version = "0.0.3"
+version = "0.0.4"
 description = "Explicit intent, evaluation, and decision layer inside native AI harnesses"
 readme = "README.md"
 license = "Apache-2.0"
@@ -30,7 +30,6 @@ where = ["core"]
 include = ["ringframe*"]
 
 [tool.setuptools.package-data]
-ringframe = ["profiles/*.yaml", "deltas/*.yaml", "deltas/practice/*.yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = ["core"]

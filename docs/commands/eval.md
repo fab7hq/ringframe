@@ -86,8 +86,8 @@ and submit them to `eval close`. The RingFrame CLI does not spawn agents.
 
 | Host | Skill instructions |
 | --- | --- |
-| [Claude Code](../../plugins/claude/skills/eval/SKILL.md) | Use foreground `Agent` calls, `Read` for evidence, and `Write` for judge files. |
-| [Codex](../../plugins/codex/skills/eval/SKILL.md) | Request fresh native agent contexts (`fork_turns: "none"` when exposed). Read evidence with a native file tool or one plain `cat` call; collect completed command and agent results. |
+| [Claude Code](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/claude/skills/eval/SKILL.md) | Use foreground `Agent` calls, `Read` for evidence, and `Write` for judge files. |
+| [Codex](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/codex/skills/eval/SKILL.md) | Request fresh native agent contexts (`fork_turns: "none"` when exposed). Read evidence with a native file tool or one plain `cat` call; collect completed command and agent results. |
 
 Both skills share the intent and judgement schemas, all-item/all-path coverage,
 fallback conditions, validation-error recovery, and reporting instructions.

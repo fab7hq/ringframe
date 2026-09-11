@@ -29,16 +29,9 @@ require(project["name"] == "ringframe" and __version__ == version, "Python ident
 require(project["scripts"] == {"ringframe": "ringframe.cli:main"}, "CLI identity mismatch")
 locked = [p for p in tomllib.loads((ROOT / "uv.lock").read_text())["package"] if p["name"] == "ringframe"]
 require(len(locked) == 1 and locked[0]["version"] == version, "Lock version mismatch")
-for host, manifest in (("claude", ".claude-plugin"), ("codex", ".codex-plugin")):
-    plugin = read_json(f"plugins/{host}/{manifest}/plugin.json")
-    require(plugin["name"] == "rf" and plugin["version"] == version, f"{host} plugin identity mismatch")
-    market = read_json(f'{".claude-plugin" if host == "claude" else ".agents/plugins"}/marketplace.json')
-    require(market["name"] == "ringframe" and len(market["plugins"]) == 1, f"{host} marketplace identity mismatch")
-    entry = market["plugins"][0]
-    source = entry["source"] if host == "claude" else entry["source"]["path"]
-    require(entry["name"] == "rf" and source == f"./plugins/{host}", f"{host} marketplace source mismatch")
-    if host == "claude":
-        require(entry["version"] == version, "Claude marketplace version mismatch")
+# Plugins and marketplaces live in fab7hq/fab7 and are released on their own tags.
+require(not (ROOT / "plugins").exists() and not (ROOT / ".claude-plugin").exists(),
+        "plugins and marketplace manifests belong to fab7hq/fab7")
 
 dist = Path(sys.argv[1])
 wheels, sdists = list(dist.glob("*.whl")), list(dist.glob("*.tar.gz"))
@@ -46,6 +39,8 @@ require(len(wheels) == len(sdists) == 1, "Expected one wheel and one sdist")
 with zipfile.ZipFile(wheels[0]) as archive:
     metadata, = [n for n in archive.namelist() if n.endswith(".dist-info/METADATA")]
     wheel_metadata = archive.read(metadata)
+    require(not [n for n in archive.namelist() if n.endswith(".yaml")],
+            "the wheel must ship no configuration; it comes from fab7hq/fab7")
 with tarfile.open(sdists[0]) as archive:
     metadata, = [m for m in archive.getmembers() if m.name.count("/") == 1 and m.name.endswith("/PKG-INFO")]
     sdist_metadata = archive.extractfile(metadata).read()

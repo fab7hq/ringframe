@@ -94,6 +94,8 @@ def validate_event(ev: dict) -> None:
         _enum_list("data.classification.effects", "classification.effects[]", c["effects"])
         if "concerns" in c and not (isinstance(c["concerns"], list) and all(isinstance(x, str) for x in c["concerns"])):
             _fail("data.classification.concerns", "must be a list of strings from the domain vocabulary")
+        if "domains" in c and not (isinstance(c["domains"], list) and all(isinstance(x, str) for x in c["domains"])):
+            _fail("data.classification.domains", "must be a list of installed practice domain names")
         comp = data.get("compiler")
         if comp is not None and (not isinstance(comp, dict) or comp.get("source") not in ("prompt", "body", "composed")):
             _fail("data.compiler", "must be {source: prompt|body|composed, ...}")

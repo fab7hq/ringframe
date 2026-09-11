@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ringframe import config, deltas, digest, ids, profiles, schema, sessions, store
+from ringframe import config, deltas, digest, ids, profiles, schema, sessions, store, workspace
 from ringframe.store import LedgerError
 from ringframe.workspace import Workspace
 
@@ -53,12 +53,17 @@ def _authorized(ws, actor, capability, effects) -> dict:
     return {**actor, "authority": f"preauthorized:authorizations/{actor['id']}.json"}
 
 
+# Domain names are file names, so their hyphens are significant and must survive normalization.
+_VERBATIM = ("domains",)
+
+
 def _normalize_classification(c) -> dict:
     """Accept `approval-gated` for `approval_gated`; the vocabulary itself is unchanged."""
     if not isinstance(c, dict):
         return c
     fix = lambda v: v.replace("-", "_") if isinstance(v, str) else v
-    return {k: [fix(x) for x in v] if isinstance(v, list) else fix(v) for k, v in c.items()}
+    return {k: v if k in _VERBATIM else ([fix(x) for x in v] if isinstance(v, list) else fix(v))
+            for k, v in c.items()}
 
 
 STAGED_FORMS = {("prompt.txt", "source.txt"): "prompt", ("body.txt", "source.txt"): "body", ("composed.txt", "source.txt"): "composed"}
@@ -105,6 +110,7 @@ def _render_prompt(ws, profile, cap, capability, classification, text_in: bytes,
 
 def compile(ws, *, staged, title, capability, classification, route, host, links=(), limitations=(), actor=None):
     """The only Ask operation that writes artifacts. Appends `ask.compiled`."""
+    workspace.require_git(ws)
     source, form, prompt = _staged(staged)
     classification = _normalize_classification(classification)
     host = dict(host)
@@ -126,7 +132,8 @@ def compile(ws, *, staged, title, capability, classification, route, host, links
         raise LedgerError("ask.route_policy", f"{capability} with effects {sorted(gated)} requires route.explicit_direct_request=true, "
                           "which is only true when the source intent itself asks to skip planning or act immediately; otherwise select native_plan")
     try:
-        deltas.validate_concerns(classification.get("concerns", []), ws=ws)
+        domains = deltas.selected_domains(classification, ws)
+        deltas.validate_concerns(classification.get("concerns", []), domains, ws)
     except config.ConfigError as e:
         raise LedgerError("ask.classification", str(e)) from None
     compiler = {"source": "prompt"}

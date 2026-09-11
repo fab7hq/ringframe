@@ -12,6 +12,28 @@ from ringframe import digest
 from ringframe.store import canonical
 
 
+def home() -> Path:
+    """The global config home. Written by `ringframe init --global`, read on every invocation."""
+    return Path.home() / ".fab7" / "rf"
+
+
+def config_dir() -> Path:
+    """Synced configuration: a mirror of the bundle. `sync` overwrites it; never edit it."""
+    return home() / "config"
+
+
+def overrides_dir() -> Path:
+    """Personal deltas, merged over `config_dir()` by id. `sync` never touches them."""
+    return home() / "overrides"
+
+
+def require_config() -> Path:
+    d = config_dir()
+    if not (d / "harnesses").is_dir():
+        raise ConfigError(f"config.absent: no configuration in {d}; run `ringframe init --global`")
+    return d
+
+
 class ConfigError(Exception):
     pass
 

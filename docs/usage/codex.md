@@ -21,12 +21,12 @@ RingFrame does not change these host settings for you.
 ## Install the plugin
 
 ```sh
-codex plugin marketplace add fab7hq/ringframe
-codex plugin add rf@ringframe
+codex plugin marketplace add fab7hq/fab7
+codex plugin add rf@fab7
 ```
 
 Start a new Codex session in your project directory. Open `/hooks`, review the
-`rf@ringframe` prompt hook, and trust it. Plugin installation and hook trust are
+`rf@fab7` prompt hook, and trust it. Plugin installation and hook trust are
 separate steps; see the [official Codex reference](https://learn.chatgpt.com/docs/llms-full.txt)
 for plugin and hook configuration.
 
@@ -71,8 +71,8 @@ Run the [CLI installer](../../README.md#installation) again, then refresh the
 marketplace and install its latest plugin:
 
 ```sh
-codex plugin marketplace upgrade ringframe
-codex plugin add rf@ringframe
+codex plugin marketplace upgrade fab7
+codex plugin add rf@fab7
 ```
 
 Start a new session and review `/hooks` again if the hook definition changed.

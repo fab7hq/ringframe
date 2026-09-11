@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +17,26 @@ def repo(tmp_path):
     return tmp_path
 
 
+FIXTURE_CONFIG = Path(__file__).parent / "fixtures" / "config"
+
+
 @pytest.fixture(autouse=True)
 def isolated_user_config(tmp_path_factory, monkeypatch):
-    # Delta reads use the user's on-disk catalog; tests never read or edit real config.
+    """A real config home per test. The package ships none; this stands in for a synced bundle."""
     monkeypatch.setenv("HOME", str(tmp_path_factory.mktemp("ringframe-user")))
+    from ringframe import workspace
+
+    workspace.install_config(FIXTURE_CONFIG)
+
+
+@pytest.fixture
+def user_home(monkeypatch):
+    """Re-point HOME at a fresh config home, for tests that want their own global layer."""
+    from ringframe import workspace
+
+    def use(path):
+        monkeypatch.setenv("HOME", str(path))
+        workspace.install_config(FIXTURE_CONFIG)
+        return Path(path)
+
+    return use

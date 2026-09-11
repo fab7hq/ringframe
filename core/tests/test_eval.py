@@ -163,12 +163,18 @@ def test_open_anchors_on_the_last_seal_when_one_exists(repo):
         evaluate.open_eval(ws, anchor="0" * 40)
 
 
-def test_open_outside_git_is_refused_and_missing_anchor_needs_input(tmp_path_factory, repo):
-    plain = tmp_path_factory.mktemp("plain")
-    ws = workspace.resolve(explicit=plain).ensure()
+def test_open_is_refused_when_git_disappears_after_the_ask(repo):
+    """compile now requires Git, so reach the Eval guard the only way left: the repo is removed."""
+    import shutil
+
+    ws = workspace.resolve(cwd=repo).ensure()
     compile_(ws)
+    shutil.rmtree(repo / ".git")
     with pytest.raises(LedgerError, match="eval.no_git"):
         evaluate.open_eval(ws)
+
+
+def test_missing_anchor_needs_input(repo):
     with pytest.raises(evaluate.NeedsInput, match="eval.anchor_unknown"):
         evaluate._anchor(ws_for(repo), [{"ask_id": "ask_old", "base_commit": None}], None)
 

@@ -86,7 +86,7 @@ control tool execution.
 
 ### Claude Code
 
-The [Ask skill](../../plugins/claude/skills/ask/SKILL.md) presents the stored
+The [Ask skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/claude/skills/ask/SKILL.md) presents the stored
 prompt through `AskUserQuestion`. After confirmation, `native_plan` calls
 `EnterPlanMode`; the PostToolUse hook records `native_accepted` from its receipt.
 The confirmed prompt stays in the current context. The host owns planning,
@@ -94,18 +94,18 @@ plan review, and subsequent work. On activation error, the skill records failure
 and offers the stored prompt for manual handoff.
 
 `native_direct` continues in the same turn and has no delivery receipt. The
-[profile](../../core/ringframe/profiles/claude-code.yaml) also declares a manual
+[profile](https://github.com/fab7hq/fab7/blob/main/products/ringframe/config/harnesses/claude-code.yaml) also declares a manual
 Goal route. The coordinator can propose it for a continuing objective and
 hand the stored prompt to the user.
 
 ### Codex
 
-The [Ask skill](../../plugins/codex/skills/ask/SKILL.md) requires
+The [Ask skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/codex/skills/ask/SKILL.md) requires
 `request_user_input` in the current turn. Missing or rejected confirmation
 stops it without confirming; no answer cancels the candidate. See
 [Codex setup](../usage/codex.md#prerequisites) for tool availability and prompt-hook trust.
 
-The [profile](../../core/ringframe/profiles/codex.yaml) uses manual handoff for
+The [profile](https://github.com/fab7hq/fab7/blob/main/products/ringframe/config/harnesses/codex.yaml) uses manual handoff for
 Plan, Goal, and Review. The CLI adds `/plan `, `/goal `, or `/review `, with a 4,000-character Goal
 limit. After confirmation, the skill records `handoff_ready` and supplies the
 complete `prompt.txt` path for the user to submit. The prompt hook can then

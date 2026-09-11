@@ -12,6 +12,7 @@ work and your decision to accept it. It runs inside Claude Code and Codex.
 Continue working with your agent between commands. Run Eval when you want a
 review, and Seal when you decide to close the work. Prompts, reviews, and
 receipts stay in your project's `.fab7/rf/`, ignored by Git by default.
+RingFrame requires the project to be a Git repository with at least one commit.
 
 ## Installation
 
@@ -22,12 +23,16 @@ Requires [uv](https://docs.astral.sh/uv/getting-started/installation/), Python
 curl -fsSL https://raw.githubusercontent.com/fab7hq/ringframe/main/install.sh | sh
 ```
 
-This installs the latest CLI and initializes your global delta configuration
-in `~/.fab7/rf/deltas/`. Run it again to upgrade; existing files at these paths
-are preserved. Then install the plugin for your harness using its guide below.
+This installs the latest CLI and downloads your configuration — harness
+profiles and rules — from the [Fab7 marketplace](https://github.com/fab7hq/fab7)
+into `~/.fab7/rf/config/`. Run `ringframe sync` to update it later. Then install
+the plugin for your harness from that marketplace using its guide below.
 
-For a specific version, use the instructions at its
-[repository release tag](https://github.com/fab7hq/ringframe/releases).
+Personal rule changes belong in `~/.fab7/rf/overrides/` and project ones in
+`<project>/.fab7/rf/deltas/`; neither is touched by a sync.
+
+The published PyPI release predates this configuration layout and cannot read
+it, so the installer takes the CLI from `main` until a newer release exists.
 To build and install a local checkout, run `./install.sh --source` from it.
 
 ## Use with your harness

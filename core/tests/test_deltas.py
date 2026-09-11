@@ -1,6 +1,8 @@
 """Deltas are data keyed by (host, capability) or by classification; the CLI renders them."""
 import pytest
 
+from tests.conftest import FIXTURE_CONFIG
+
 from ringframe import config, deltas, profiles, workspace
 
 IMPL = {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"]}
@@ -32,8 +34,8 @@ def test_host_deltas_render_only_when_qualified_by_default(repo):
     assert "claude-code.native_plan.verify_paths" in r2["host"]["deltas"] and r2["host"]["text"]
 
 
-def test_practice_selection_is_faceted_tiered_and_budgeted(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # each test has isolated global delta catalogs
+def test_practice_selection_is_faceted_tiered_and_budgeted(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")  # each test has isolated global delta catalogs
     ws = workspace.resolve(cwd=repo).ensure()
     prof = profiles.load("codex")
     plain = deltas.render(ws, prof, "native_plan", IMPL)
@@ -51,31 +53,32 @@ def test_practice_selection_is_faceted_tiered_and_budgeted(repo, monkeypatch, tm
         deltas.render(ws, prof, "native_plan", {**IMPL, "concerns": ["telepathy"]})
 
 
-def test_user_and_workspace_layers_override_by_id(repo, monkeypatch, tmp_path):
+def test_user_and_workspace_layers_override_by_id(repo, monkeypatch, tmp_path, user_home):
     home = tmp_path / "home"  # the repo fixture is tmp_path itself; the user layer must be a different tree
-    monkeypatch.setenv("HOME", str(home))
+    user_home(home)
     import yaml
-    workspace.initialize_user()
-    catalog = home / ".fab7/rf/deltas/practice/software-development.yaml"
-    doc = config.load_yaml(catalog)
+    workspace.install_config(FIXTURE_CONFIG)
+    catalog = home / ".fab7/rf/overrides/deltas/practices/software-development.yaml"
+    catalog.parent.mkdir(parents=True, exist_ok=True)
+    doc = config.load_yaml(config.config_dir() / "deltas/practices/software-development.yaml")
     next(e for e in doc["entries"] if e["id"] == "practice.kiss")["text"] = "Keep it plain."
     doc["entries"].append({"id": "practice.team.commit_style", "tier": "core",
                            "applies_to": {"task": ["implement"]},
                            "text": "One commit per item, message names the item."})
     catalog.write_text(yaml.safe_dump(doc))
     ws = workspace.resolve(cwd=repo).ensure()
-    (ws.root / ".fab7/rf/deltas/practice/software-development.yaml").write_text("schema: ringframe.deltas/1\nscope: practice\nentries:\n  - id: practice.yagni\n    enabled: false\n")
+    (ws.root / ".fab7/rf/deltas/practices/software-development.yaml").write_text("schema: ringframe.deltas/1\nscope: practice\nentries:\n  - id: practice.yagni\n    enabled: false\n")
     r = deltas.render(ws, profiles.load("codex"), "native_plan", IMPL)
     assert "Keep it plain." in r["text"] and "practice.yagni" not in r["practice"]["selected"]
     assert "practice.team.commit_style" in r["practice"]["selected"]
     layers = [(l["root"], l["path"].endswith("software-development.yaml")) for l in r["practice"]["layers"]]
-    assert layers == [("user", True), ("workspace", True)]
+    assert layers == [("config", True), ("user", True), ("workspace", True)]
     listing = deltas.effective(ws, "software-development")
     assert listing["practice.kiss"]["layer"] == "user" and listing["practice.yagni"]["enabled"] is False and listing["practice.gall"]["layer"] == "user"
 
 
-def test_render_is_a_labelled_rules_list_and_entries_carry_labels(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_render_is_a_labelled_rules_list_and_entries_carry_labels(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     ws = workspace.resolve(cwd=repo).ensure()
     r = deltas.render(ws, profiles.load("codex"), "native_plan", {**IMPL, "concerns": ["api_surface"]})
     lines = r["practice"]["text"].splitlines()
@@ -87,8 +90,8 @@ def test_render_is_a_labelled_rules_list_and_entries_carry_labels(repo, monkeypa
         assert all(e.get("label") for e in deltas.load_host_catalog(name)["entries"])
 
 
-def test_candidate_practice_entries_render_only_when_candidates_are_requested(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_candidate_practice_entries_render_only_when_candidates_are_requested(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     ws = workspace.resolve(cwd=repo).ensure()
     prof = profiles.load("claude-code")
     default = deltas.render(ws, prof, "native_plan", IMPL)
@@ -96,3 +99,152 @@ def test_candidate_practice_entries_render_only_when_candidates_are_requested(re
     evaluation = deltas.render(ws, prof, "native_plan", IMPL, statuses=("qualified", "candidate"))
     assert "practice.assumptions" in evaluation["practice"]["selected"]  # evaluation runs render candidates so they can be measured
     assert set(evaluation["practice"]["selected"]) >= set(default["practice"]["selected"])
+
+
+# ---- catalog reachability and task coverage ---------------------------------------------------
+
+TASK_PROBE = {
+    "question": [], "research": [], "clarify": [], "plan": [], "implement": [],
+    "diagnose": ["tests_only"], "review": [], "operate": ["operate"], "document": ["cli"],
+}
+
+
+def _probe(task, concerns):
+    return {"task": [task], "result": "plan", "interaction": "approval_gated",
+            "horizon": "session", "effects": ["read"], "concerns": concerns}
+
+
+def test_every_entry_can_be_selected(repo):
+    """A situational entry with no concerns never matches, so it is dead configuration."""
+    cat = deltas.load_practice_catalog(ws=workspace.resolve(cwd=repo))
+    dead = [e["id"] for e in cat["entries"]
+            if e.get("tier", "situational") == "situational" and not e.get("concerns")]
+    assert dead == []
+
+
+def test_every_task_selects_at_least_one_rule(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    profile = profiles.load("claude-code")
+    for task, concerns in TASK_PROBE.items():
+        out = deltas.render(ws, profile, "native_plan", _probe(task, concerns))
+        assert out["practice"]["selected"], f"{task} selects no rule"
+
+
+def test_named_rules_select_for_their_task(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    profile = profiles.load("claude-code")
+    expected = {"research": "practice.occam", "review": "practice.linus",
+                "question": "practice.confirmation_bias", "implement": "practice.testing_pyramid"}
+    for task, rule in expected.items():
+        out = deltas.render(ws, profile, "native_plan", _probe(task, TASK_PROBE[task]))
+        assert rule in out["practice"]["selected"], f"{rule} missing for {task}"
+
+
+def test_core_cap_is_not_exceeded_for_any_task(repo):
+    ws = workspace.resolve(cwd=repo).ensure()
+    profile = profiles.load("claude-code")
+    cap = deltas.load_practice_catalog(ws=ws)["render"]["core_cap"]
+    for task, concerns in TASK_PROBE.items():
+        out = deltas.render(ws, profile, "native_plan", _probe(task, concerns))
+        assert len(out["practice"]["dropped_by_budget"]) == 0, f"{task} drops a core rule"
+        assert len(out["practice"]["selected"]) >= 1 and cap >= 1
+
+
+# ---- additive specialist domains ---------------------------------------------------------------
+
+def _second_domain(name="fixture-domain"):
+    """A tiny specialist catalog installed beside the base one."""
+    return f"""schema: ringframe.deltas/1
+scope: practice
+domain: {name}
+description: An invented domain used only by tests.
+render: {{heading: 'Rules:', core_cap: 2}}
+concerns: [widgets, api_surface]
+entries:
+  - id: practice.widget_first
+    label: Widget First
+    tier: core
+    applies_to: {{task: [implement]}}
+    text: Build the widget before the housing.
+  - id: practice.widget_check
+    label: Widget Check
+    applies_to: {{task: [implement]}}
+    concerns: [widgets]
+    text: Measure the widget after fitting it.
+"""
+
+
+@pytest.fixture
+def two_domains(repo, user_home, tmp_path):
+    home = user_home(tmp_path / "two-domains")
+    (config.config_dir() / "deltas/practices/fixture-domain.yaml").write_text(_second_domain())
+    return workspace.resolve(cwd=repo).ensure(), home
+
+
+def test_absent_domains_render_only_the_base(two_domains):
+    ws, _ = two_domains
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan", IMPL)
+    assert out["practice"]["domains"] == [] or [d["domain"] for d in out["practice"]["domains"]] == ["software-development"]
+    assert not any(i.startswith("practice.widget") for i in out["practice"]["selected"])
+
+
+def test_specialist_domain_renders_after_the_base_under_its_own_cap(two_domains):
+    ws, _ = two_domains
+    cls = {**IMPL, "domains": ["fixture-domain"], "concerns": [*IMPL.get("concerns", []), "widgets"]}
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan", cls)
+    p = out["practice"]
+    assert [d["domain"] for d in p["domains"]] == ["software-development", "fixture-domain"]
+    base_ids = p["domains"][0]["selected"]
+    assert p["selected"][:len(base_ids)] == base_ids  # base first, specialist after
+    assert "practice.widget_first" in p["selected"] and "practice.widget_check" in p["selected"]
+    labels = [l.split(":")[0] for l in p["text"].splitlines()[1:]]
+    assert labels[len(base_ids)] == "- Widget First"
+
+
+def test_unknown_domain_is_refused_with_the_installed_set(two_domains):
+    ws, _ = two_domains
+    with pytest.raises(config.ConfigError, match="installed"):
+        deltas.render(ws, profiles.load("claude-code"), "native_plan", {**IMPL, "domains": ["teleportation"]})
+
+
+def test_concerns_validate_against_the_union_of_selected_domains(two_domains):
+    ws, _ = two_domains
+    prof = profiles.load("claude-code")
+    with pytest.raises(config.ConfigError, match="concern"):
+        deltas.render(ws, prof, "native_plan", {**IMPL, "concerns": ["widgets"]})
+    out = deltas.render(ws, prof, "native_plan", {**IMPL, "domains": ["fixture-domain"], "concerns": ["widgets"]})
+    assert "practice.widget_check" in out["practice"]["selected"]
+
+
+def test_domains_lists_installed_domains_and_project_opt_in(two_domains):
+    ws, _ = two_domains
+    listed = {d["domain"]: d for d in deltas.domains(ws)}
+    assert listed["software-development"]["base"] is True and listed["fixture-domain"]["base"] is False
+    assert listed["fixture-domain"]["description"] and "widgets" in listed["fixture-domain"]["concerns"]
+    assert listed["fixture-domain"]["project_opted_in"] is False
+    opt_in = ws.rf_dir / "deltas/practices/fixture-domain.yaml"
+    opt_in.parent.mkdir(parents=True, exist_ok=True)
+    opt_in.write_text("schema: ringframe.deltas/1\nscope: practice\ndomain: fixture-domain\n")
+    assert {d["domain"]: d for d in deltas.domains(ws)}["fixture-domain"]["project_opted_in"] is True
+
+
+def test_project_init_seeds_only_the_base_domain(two_domains):
+    ws, _ = two_domains
+    seeded = sorted(p.name for p in (ws.rf_dir / "deltas/practices").glob("*.yaml"))
+    assert seeded == ["software-development.yaml"]
+
+
+def test_a_domain_can_be_added_through_personal_overrides(repo, user_home, tmp_path):
+    """delta.md offers a domain file "in the marketplace or in your overrides"."""
+    user_home(tmp_path / "override-domain")
+    mine = config.overrides_dir() / "deltas/practices/fixture-domain.yaml"
+    mine.parent.mkdir(parents=True, exist_ok=True)
+    mine.write_text(_second_domain())
+    ws = workspace.resolve(cwd=repo).ensure()
+    listed = {d["domain"]: d for d in deltas.domains(ws)}
+    assert "fixture-domain" in listed and listed["fixture-domain"]["base"] is False
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan",
+                        {**IMPL, "domains": ["fixture-domain"], "concerns": ["widgets"]})
+    assert "practice.widget_first" in out["practice"]["selected"]
+    block = next(d for d in out["practice"]["domains"] if d["domain"] == "fixture-domain")
+    assert block["shipped_sha256"] is None  # nothing shipped it; it is the user's own

@@ -6,6 +6,8 @@ import sys
 
 import pytest
 
+from tests.conftest import FIXTURE_CONFIG
+
 from ringframe import __version__, cli
 from tests.test_eval import commit, head, intent, judgement, two_asks_and_work
 
@@ -175,13 +177,13 @@ def test_module_entrypoint_and_version():
     assert cp.returncode == 0 and cp.stdout.strip() == f"ringframe {__version__}"
 
 
-def test_deltas_commands(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_deltas_commands(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     code, out, _ = run(repo, "deltas", "list", "--host", "codex", "--capability", "native_goal", "--json", monkeypatch=monkeypatch)
     assert code == 0 and [e["id"] for e in out["host"]] == ["codex.native_goal.item_loop", "codex.native_goal.terminal_condition"]
     assert all(e["status"] == "candidate" for e in out["host"])
     code, out, _ = run(repo, "deltas", "list", "--effective", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and out["practice.kiss"]["layer"] == "user"
+    assert code == 0 and out["practice.kiss"]["layer"] == "config"
     cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]})
     code, out, _ = run(repo, "deltas", "render", "--host", "codex", "--host-version", "codex-cli 0.153.4", "--capability", "native_plan", "--classification", cls, "--json", monkeypatch=monkeypatch)
     assert code == 0 and "practice.hyrum" in out["practice"]["selected"] and out["text"]
@@ -189,8 +191,8 @@ def test_deltas_commands(repo, monkeypatch, tmp_path):
     assert code == 0 and "observable behaviour" in text
 
 
-def test_deltas_render_json_exposes_each_directive_for_composition(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_deltas_render_json_exposes_each_directive_for_composition(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]})
     code, out, _ = run(repo, "deltas", "render", "--host", "codex", "--host-version", "codex-cli 0.153.4", "--capability", "native_plan", "--classification", cls, "--json", monkeypatch=monkeypatch)
     assert code == 0
@@ -223,22 +225,25 @@ def test_hook_uses_payload_project_and_initializes_private_storage(repo, monkeyp
     assert not (repo / ".fab7").exists()
 
 
-def test_global_init_materializes_deltas_and_preserves_customizations(repo, tmp_path, monkeypatch):
-    from importlib.resources import files
-    home = tmp_path / "user-home"
-    monkeypatch.setenv("HOME", str(home))
-    code, out, _ = run(repo, "init", "--global", "--json", monkeypatch=monkeypatch)
-    assert code == 0
+def test_global_init_mirrors_the_bundle_and_leaves_overrides_alone(repo, tmp_path, monkeypatch, user_home):
+    home = user_home(tmp_path / "user-home")
+    code, out, _ = run(repo, "init", "--global", "--from", str(FIXTURE_CONFIG), "--json", monkeypatch=monkeypatch)
+    assert code == 0 and out["revision"] == "local"
     root = home / ".fab7/rf"
     assert not (repo / ".fab7").exists()
-    for rel in ["deltas/codex.yaml", "deltas/claude-code.yaml", "deltas/practice/software-development.yaml"]:
-        assert (root / rel).read_bytes() == (files("ringframe") / rel).read_bytes()
-    catalog = root / "deltas/codex.yaml"
-    catalog.write_text(catalog.read_text() + "\n# User customization preserved\n")
-    before = catalog.read_bytes()
-    code, _, _ = run(repo, "init", "--global", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and catalog.read_bytes() == before
-    assert set(root.iterdir()) == {root / "deltas"}
+    assert set(root.iterdir()) == {root / "config", root / "overrides"}
+    for rel in ["deltas/codex.yaml", "deltas/claude-code.yaml", "deltas/practices/software-development.yaml"]:
+        assert (root / "config" / rel).read_bytes() == (FIXTURE_CONFIG / rel).read_bytes()
+    # a personal override survives a sync; an edit to the mirror does not
+    mine = root / "overrides/deltas/practices/software-development.yaml"
+    mine.parent.mkdir(parents=True, exist_ok=True)
+    mine.write_text("entries: [{id: practice.kiss, text: Mine.}]\n")
+    edited = root / "config/deltas/codex.yaml"
+    edited.write_text(edited.read_text() + "\n# scribbled on the mirror\n")
+    code, _, _ = run(repo, "sync", "--from", str(FIXTURE_CONFIG), "--json", monkeypatch=monkeypatch)
+    assert code == 0
+    assert mine.read_text() == "entries: [{id: practice.kiss, text: Mine.}]\n"
+    assert edited.read_bytes() == (FIXTURE_CONFIG / "deltas/codex.yaml").read_bytes()
 
 
 def test_nested_compile_and_hook_delivery_keep_records_in_project(repo, monkeypatch):
@@ -266,8 +271,8 @@ def test_nested_compile_and_hook_delivery_keep_records_in_project(repo, monkeypa
 def test_compile_reads_merged_ledger_delta_files(repo, monkeypatch):
     from ringframe import deltas, workspace
     ws = workspace.resolve(cwd=repo).ensure()
-    workspace.initialize_user()
-    local = ws.rf_dir / "deltas/practice/software-development.yaml"
+    workspace.install_config(FIXTURE_CONFIG)
+    local = ws.rf_dir / "deltas/practices/software-development.yaml"
     local.write_text("concerns: [project_special]\nrender: {core_cap: 1}\nentries: [{id: practice.kiss, text: Use the project setting.}]\n")
     cls = json.dumps({"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["project_special"]})
     stage = repo / "stage"
@@ -299,6 +304,54 @@ def test_profile_cli_exposes_routing_and_capability_sources(repo, monkeypatch):
 def test_delta_listing_exposes_merged_concern_vocabulary(repo, monkeypatch):
     from ringframe import workspace
     ws = workspace.resolve(cwd=repo).ensure()
-    (ws.rf_dir / "deltas/practice/software-development.yaml").write_text("concerns: [team_boundary]\n")
+    (ws.rf_dir / "deltas/practices/software-development.yaml").write_text("concerns: [team_boundary]\n")
     code, out, _ = run(repo, "deltas", "list", "--json", monkeypatch=monkeypatch)
     assert code == 0 and out["concerns"] == ["team_boundary"]
+
+
+# ---- Git is a hard requirement, refused at the earliest command --------------------------------
+
+def test_init_refuses_a_non_git_workspace(tmp_path, monkeypatch):
+    code, out, _ = run(tmp_path, "init", "--json", monkeypatch=monkeypatch)
+    assert code == 2
+    assert out["error"] == "workspace.no_git"
+    assert "git init" in out["detail"]
+    assert not (tmp_path / ".fab7").exists()
+
+
+def test_ask_compile_refuses_a_non_git_workspace(tmp_path, monkeypatch):
+    d = tmp_path / ".fab7/rf/tmp/stage-1"
+    d.mkdir(parents=True)
+    (d / "source.txt").write_bytes(b"fix login\n")
+    (d / "prompt.txt").write_bytes(b"Fix login.\n")
+    code, out, _ = run(tmp_path, "ask", "compile", "--staged", str(d), "--title", "Login",
+                       "--capability", "native_plan", "--classification", CLS, "--route", ROUTE,
+                       "--host", host(), "--json", monkeypatch=monkeypatch)
+    assert code == 2
+    assert out["error"] == "workspace.no_git"
+
+
+def test_ask_compile_refuses_a_repo_without_a_commit(tmp_path, monkeypatch):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    d = tmp_path / ".fab7/rf/tmp/stage-1"
+    d.mkdir(parents=True)
+    (d / "source.txt").write_bytes(b"fix login\n")
+    (d / "prompt.txt").write_bytes(b"Fix login.\n")
+    code, out, _ = run(tmp_path, "ask", "compile", "--staged", str(d), "--title", "Login",
+                       "--capability", "native_plan", "--classification", CLS, "--route", ROUTE,
+                       "--host", host(), "--json", monkeypatch=monkeypatch)
+    assert code == 2
+    assert out["error"] == "workspace.no_commit"
+
+
+def test_deltas_domains_and_unknown_domain_is_refused(repo, tmp_path, monkeypatch, user_home):
+    user_home(tmp_path / "domains-home")
+    code, out, _ = run(repo, "deltas", "domains", "--json", monkeypatch=monkeypatch)
+    assert code == 0
+    base = next(d for d in out["domains"] if d["base"])
+    assert base["domain"] == "software-development" and base["concerns"]
+    cls = json.dumps({"task": ["plan"], "result": "plan", "interaction": "approval_gated",
+                      "horizon": "session", "effects": ["read"], "domains": ["teleportation"]})
+    code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "T", "--capability", "native_plan",
+                       "--classification", cls, "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+    assert code == 2 and out["error"] == "ask.classification" and "installed" in out["detail"]

@@ -37,6 +37,6 @@ set -eu
     uv.chmod(0o755)
     cli.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "TEST_BIN": str(bin_dir),
-           "INSTALL_RECORD": str(tmp_path / "installed"), "EXPECTED_SOURCE": str(checkout) if args else "ringframe"}
+           "INSTALL_RECORD": str(tmp_path / "installed"), "EXPECTED_SOURCE": str(checkout) if args else "git+https://github.com/fab7hq/ringframe@main"}
     result = subprocess.run(["sh", str(checkout / "install.sh"), *args], cwd=tmp_path, env=env, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

@@ -24,8 +24,8 @@ An interactive human actor is accepted as declared. Other actors need a local
 and subject kind; an expiry is checked when supplied. These are caller-supplied
 identities and local grants, not host authentication.
 
-The [Claude skill](../../plugins/claude/skills/seal/SKILL.md) requests confirmation
-with `AskUserQuestion`; the [Codex skill](../../plugins/codex/skills/seal/SKILL.md)
+The [Claude skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/claude/skills/seal/SKILL.md) requests confirmation
+with `AskUserQuestion`; the [Codex skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/codex/skills/seal/SKILL.md)
 uses `request_user_input`. Both stop without creating a Seal if their tool is
 missing, its call is rejected, or the chooser is cancelled or unanswered.
 

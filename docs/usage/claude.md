@@ -11,12 +11,12 @@
 ## Install the plugin
 
 ```sh
-claude plugin marketplace add fab7hq/ringframe
-claude plugin install rf@ringframe
+claude plugin marketplace add fab7hq/fab7
+claude plugin install rf@fab7
 ```
 
 This installs for your user. To share the plugin setting with a project, run
-`claude plugin install rf@ringframe --scope project` from that project instead.
+`claude plugin install rf@fab7 --scope project` from that project instead.
 See Claude's [plugin installation reference](https://code.claude.com/docs/en/plugins-reference#plugin-install)
 for installation scopes.
 
@@ -58,8 +58,8 @@ Run the [CLI installer](../../README.md#installation) again, then refresh the
 marketplace and plugin:
 
 ```sh
-claude plugin marketplace update ringframe
-claude plugin update rf@ringframe
+claude plugin marketplace update fab7
+claude plugin update rf@fab7
 ```
 
 For a project-scoped installation, add `--scope project` to the plugin update.

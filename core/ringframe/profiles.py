@@ -1,14 +1,20 @@
-"""Host capability profiles shipped with the core."""
-
-from importlib import resources
+"""Host capability profiles, read from the global config home."""
 
 from ringframe import config
 
-_DIR = resources.files("ringframe") / "profiles"
+
+def _dir():
+    return config.require_config() / "harnesses"
 
 
 def load(name: str) -> dict:
-    return config.load_yaml_text((_DIR / f"{name}.yaml").read_text(encoding="utf-8"), f"profiles/{name}.yaml")
+    doc = config.load_yaml_text((_dir() / f"{name}.yaml").read_text(encoding="utf-8"), f"harnesses/{name}.yaml")
+    from ringframe.workspace import PROFILE_SCHEMA
+
+    if doc.get("schema") != PROFILE_SCHEMA:
+        raise config.ConfigError(
+            f"harnesses/{name}.yaml declares {doc.get('schema')!r}; this release reads {PROFILE_SCHEMA!r}")
+    return doc
 
 
 def sha256(name: str) -> str:
@@ -16,7 +22,7 @@ def sha256(name: str) -> str:
 
 
 def names() -> list[str]:
-    return sorted(p.name[:-5] for p in _DIR.iterdir() if p.name.endswith(".yaml"))
+    return sorted(p.name[:-5] for p in _dir().iterdir() if p.name.endswith(".yaml"))
 
 
 def for_host(host: dict) -> dict:

@@ -1,4 +1,4 @@
-# Seed for ~/.fab7/rf/deltas/practice/software-development.yaml; project overrides use the matching .fab7/rf path.
+# Seed for ~/.fab7/rf/deltas/practices/software-development.yaml; project overrides use the matching .fab7/rf path.
 schema: ringframe.deltas/1
 scope: practice
 domain: software-development
@@ -70,6 +70,7 @@ entries:
     principle: Principle of Least Astonishment
     applies_to:
       task: [implement, document]
+    concerns: [api_surface, cli, ui]
     text: >-
       Make names, signatures, defaults, and behaviour match what a reader of
       the surrounding code would expect; when a choice would surprise, prefer
@@ -152,6 +153,7 @@ entries:
     principle: Goodhart's Law
     applies_to:
       task: [plan, review]
+    concerns: [tests_only]
     text: >-
       Define done by the requirement being met, not by a proxy such as
       coverage, line count, or test count; check the behaviour the
@@ -172,6 +174,7 @@ entries:
       task: [plan, implement]
     requires:
       host_capability: subagents
+    concerns: [refactor, data_migration]
     text: >-
       Split work across agents only along independent items; hand research and
       review to a sub-agent when the context would grow past what one agent
@@ -203,6 +206,7 @@ entries:
     principle: Pesticide Paradox
     applies_to:
       task: [diagnose, implement]
+    concerns: [tests_only]
     text: >-
       When a fault escaped the existing tests, add the test that would have
       caught it rather than re-running the ones that did not.
@@ -211,6 +215,7 @@ entries:
     principle: Kernighan's Law
     applies_to:
       task: [implement, review]
+    concerns: [refactor]
     text: >-
       Write code plain enough to debug at half your cleverness; when a clever
       construct saves lines but costs clarity, choose clarity.
@@ -219,6 +224,7 @@ entries:
     principle: Linus's Law
     applies_to:
       task: [review]
+    tier: core
     text: >-
       Review as an independent reader: judge the change against the
       requirement rather than its description, and report each finding with
@@ -238,6 +244,7 @@ entries:
     principle: Murphy's Law
     applies_to:
       task: [operate, implement]
+    concerns: [operate, data_migration]
     text: >-
       Assume every step can fail; verify the current state before changing it
       and name the rollback before the first change.
@@ -248,6 +255,7 @@ entries:
     principle: Occam's Razor and First Principles
     applies_to:
       task: [diagnose, research]
+    tier: core
     text: >-
       Reproduce the fault first and reduce it to the smallest case; prefer the
       simplest explanation that fits all the evidence; reason from what the
@@ -256,7 +264,8 @@ entries:
     label: Confirmation Bias
     principle: Confirmation Bias and Dunning-Kruger
     applies_to:
-      task: [research, question, review, diagnose]
+      task: [research, question, clarify, review, diagnose]
+    tier: core
     text: >-
       Look for the evidence that would prove you wrong before concluding; keep
       what you observed apart from what you inferred, and state your
@@ -276,6 +285,7 @@ entries:
     principle: Sunk Cost Fallacy
     applies_to:
       task: [implement, plan]
+    concerns: [refactor, dependency_change]
     text: >-
       When an approach is not working, abandon it regardless of the effort
       already spent, and say so.

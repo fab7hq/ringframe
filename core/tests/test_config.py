@@ -1,4 +1,5 @@
 """Authored configuration is YAML; identities are digests of the parsed document's canonical JSON."""
+from tests.conftest import FIXTURE_CONFIG
 from ringframe import config, profiles
 
 
@@ -36,35 +37,40 @@ def test_profiles_are_yaml_with_canonical_identity():
     assert profiles.sha256("codex") == config.sha256_of(p)
 
 
-def test_global_and_project_configuration_share_rf_without_creating_rt(repo, tmp_path, monkeypatch):
+def test_global_and_project_configuration_share_rf_without_creating_rt(repo, tmp_path, monkeypatch, user_home):
     from ringframe import workspace, deltas
     home = tmp_path / "user-home"
-    monkeypatch.setenv("HOME", str(home))
-    result = workspace.initialize_user()
+    user_home(home)
+    result = workspace.install_config(FIXTURE_CONFIG)
     assert result["rf_dir"] == str(home / ".fab7/rf")
     ws = workspace.resolve(cwd=repo).ensure()
-    assert deltas.user_root() == home / ".fab7/rf"
+    assert config.home() == home / ".fab7/rf"
     assert profiles.load("codex")["confirmation"]["tool"] == "request_user_input"
-    assert len(list((ws.rf_dir / "deltas").rglob("*.yaml"))) == 3
-    assert all(p.read_bytes() == b"" for p in (ws.rf_dir / "deltas").rglob("*.yaml"))
-    assert set((home / ".fab7/rf").iterdir()) == {home / ".fab7/rf/deltas"}
+    # the project seeds only the base domain's empty override file
+    project = sorted((ws.rf_dir / "deltas").rglob("*.yaml"))
+    assert [p.name for p in project] == ["software-development.yaml"] and project[0].read_bytes() == b""
+    # the home holds the synced mirror and an empty overrides tree, nothing else
+    assert set((home / ".fab7/rf").iterdir()) == {home / ".fab7/rf/config", home / ".fab7/rf/overrides"}
+    assert (config.config_dir() / ".revision").read_text().strip() == "local"
+    assert list(config.overrides_dir().rglob("*.yaml")) == []
     assert not (home / ".fab7/rt").exists()
     assert not (repo / ".fab7/rt").exists()
 
 
-def test_scoped_delta_catalogs_apply_project_conflicts_and_render_settings(repo, tmp_path, monkeypatch):
+def test_scoped_delta_catalogs_apply_project_conflicts_and_render_settings(repo, tmp_path, monkeypatch, user_home):
     from ringframe import workspace, deltas
     home = tmp_path / 'user-home'
-    monkeypatch.setenv('HOME', str(home))
-    workspace.initialize_user()
+    user_home(home)
+    workspace.install_config(FIXTURE_CONFIG)
     ws = workspace.resolve(cwd=repo).ensure()
-    global_file = home / '.fab7/rf/deltas/practice/software-development.yaml'
-    global_doc = config.load_yaml(global_file)
+    global_file = home / '.fab7/rf/overrides/deltas/practices/software-development.yaml'
+    global_file.parent.mkdir(parents=True, exist_ok=True)
+    global_doc = config.load_yaml(config.config_dir() / 'deltas/practices/software-development.yaml')
     global_doc['render']['core_cap'] = 1
     global_doc['entries'][0]['text'] = 'Global rule.'
     import yaml
     global_file.write_text(yaml.safe_dump(global_doc))
-    local = ws.root / '.fab7/rf/deltas/practice/software-development.yaml'
+    local = ws.root / '.fab7/rf/deltas/practices/software-development.yaml'
     local.write_text('render: {core_cap: 2}\nentries: [{id: practice.kiss, text: Project rule.}]\n')
     host_file = ws.root / '.fab7/rf/deltas/codex.yaml'
     host_file.write_text('entries: [{id: codex.native_plan.hand_back, status: qualified, text: Project host rule.}]\n')
@@ -75,15 +81,15 @@ def test_scoped_delta_catalogs_apply_project_conflicts_and_render_settings(repo,
     assert deltas.effective(ws)['practice.kiss']['layer'] == 'workspace'
 
 
-def test_empty_project_override_inherits_and_project_can_clear_entries(repo, tmp_path, monkeypatch):
+def test_empty_project_override_inherits_and_project_can_clear_entries(repo, tmp_path, monkeypatch, user_home):
     from ringframe import workspace, deltas
     home = tmp_path / "user-home"
-    monkeypatch.setenv("HOME", str(home))
-    workspace.initialize_user()
+    user_home(home)
+    workspace.install_config(FIXTURE_CONFIG)
     ws = workspace.resolve(cwd=repo).ensure()
     original = deltas.effective(ws)
     assert "practice.kiss" in original
-    local = ws.root / ".fab7/rf/deltas/practice/software-development.yaml"
+    local = ws.root / ".fab7/rf/deltas/practices/software-development.yaml"
     assert local.read_bytes() == b""
     local.write_text("entries: []\n")
     assert deltas.effective(ws) == {}
@@ -91,17 +97,18 @@ def test_empty_project_override_inherits_and_project_can_clear_entries(repo, tmp
     assert deltas.effective(ws) == original
 
 
-def test_delta_merge_preserves_global_nested_fields_and_project_list_values(repo, tmp_path, monkeypatch):
+def test_delta_merge_preserves_global_nested_fields_and_project_list_values(repo, tmp_path, monkeypatch, user_home):
     import yaml
     from ringframe import workspace, deltas
-    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
-    workspace.initialize_user()
+    user_home(tmp_path / "user-home")
+    workspace.install_config(FIXTURE_CONFIG)
     ws = workspace.resolve(cwd=repo).ensure()
-    global_file = deltas.user_root() / "deltas/practice/software-development.yaml"
-    global_doc = config.load_yaml(global_file)
+    global_file = config.overrides_dir() / "deltas/practices/software-development.yaml"
+    global_file.parent.mkdir(parents=True, exist_ok=True)
+    global_doc = config.load_yaml(config.config_dir() / "deltas/practices/software-development.yaml")
     global_doc["entries"][0]["applies_to"] = {"task": ["implement"], "result": ["workspace_change"]}
     global_file.write_text(yaml.safe_dump(global_doc))
-    local = ws.root / ".fab7/rf/deltas/practice/software-development.yaml"
+    local = ws.root / ".fab7/rf/deltas/practices/software-development.yaml"
     local.write_text("entries: [{id: practice.kiss, applies_to: {task: [plan]}, why: null}]\n")
     merged = deltas.effective(ws)["practice.kiss"]
     assert merged["applies_to"] == {"task": ["plan"], "result": ["workspace_change"]}

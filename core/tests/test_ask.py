@@ -316,8 +316,8 @@ def test_ambiguous_submission_prefers_the_delivered_ask_and_otherwise_records_no
     assert store.verify(ws) == []
 
 
-def test_compile_renders_prompt_from_body_and_records_compiler_provenance(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_compile_renders_prompt_from_body_and_records_compiler_provenance(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     ws = workspace.resolve(cwd=repo).ensure()
     sessions.capture(ws, "codex", {"session_id": "cg", "prompt": "$rf:ask keep checkout fast"}, host_version="codex-cli 0.153.4")
     d = ws.rf_dir / "tmp" / "stage-body"
@@ -340,16 +340,16 @@ def test_compile_renders_prompt_from_body_and_records_compiler_provenance(repo, 
         compile_(ws, staged=d2)
 
 
-def test_compile_rejects_unknown_concern_before_writing(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_compile_rejects_unknown_concern_before_writing(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     ws = workspace.resolve(cwd=repo).ensure()
     with pytest.raises(LedgerError, match="ask.classification"):
         compile_(ws, classification={**CLS, "concerns": ["telepathy"]})
     assert not (ws.rf_dir / "asks").exists() or not any((ws.rf_dir / "asks").iterdir())
 
 
-def test_compile_composed_prompt_records_the_cli_selection_not_the_models_claim(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_compile_composed_prompt_records_the_cli_selection_not_the_models_claim(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     ws = workspace.resolve(cwd=repo).ensure()
     sessions.capture(ws, "codex", {"session_id": "cc", "prompt": "$rf:ask add the health endpoint"}, host_version="codex-cli 0.153.4")
     d = ws.rf_dir / "tmp" / "stage-composed"
@@ -373,8 +373,8 @@ def _composed_stage(ws, rules: str):
     return d
 
 
-def test_composed_rules_are_audited_against_the_supplied_directives(repo, monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+def test_composed_rules_are_audited_against_the_supplied_directives(repo, monkeypatch, tmp_path, user_home):
+    user_home(tmp_path / "home")
     ws = workspace.resolve(cwd=repo).ensure()
     cls = {"task": ["implement"], "result": "workspace_change", "interaction": "approval_gated", "horizon": "session", "effects": ["write"], "concerns": ["api_surface"]}
     host = {"name": "codex", "version": "codex-cli 0.153.4", "surface": "native-tui", "session_ref": "cx"}
@@ -429,10 +429,12 @@ def test_compile_records_base_commit_and_asks_are_open_until_sealed_or_cancelled
     assert [x["state"] for x in ask.list_asks(ws)] == ["sealed", "cancelled"] and ask.open_asks(ws) == []
 
 
-def test_compile_outside_git_records_no_base_commit(tmp_path):
+def test_compile_outside_git_is_refused(tmp_path):
+    """Git is a hard requirement: an Ask that could never be evaluated is not recorded."""
     ws = workspace.resolve(explicit=tmp_path).ensure()
-    compile_(ws)
-    assert store.events(ws)[0]["data"]["base_commit"] is None
+    with pytest.raises(workspace.WorkspaceError, match="workspace.no_git"):
+        compile_(ws)
+    assert store.events(ws) == []
 
 
 @pytest.mark.parametrize("version", ["codex-cli 1.0.0", "development", None])
@@ -492,3 +494,9 @@ def test_codex_review_compiles_and_hands_off_from_profile(repo):
     assert event["data"]["host"]["profile_sha256"] == profiles.sha256("codex")
     assert event["data"]["selected_capability"] == "native_review"
     assert store.verify(ws) == []
+
+
+def test_classification_normalization_keeps_domain_names_verbatim(repo):
+    """`approval-gated` is normalized, but a domain name is a file name: its hyphens are significant."""
+    c = ask._normalize_classification({"interaction": "approval-gated", "domains": ["autonomous-trading"]})
+    assert c["interaction"] == "approval_gated" and c["domains"] == ["autonomous-trading"]

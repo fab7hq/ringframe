@@ -6,31 +6,34 @@ harnesses, and host deltas for instructions tied to one native capability.
 Profiles define available capability routes; deltas do not add routes or tools.
 The [compiler](compiler.md) owns prompt composition and provenance.
 
-## Files and scopes
+## Where configuration comes from
 
-| Catalog | Global file | Project file |
-| --- | --- | --- |
-| Practices | `~/.fab7/rf/deltas/practice/software-development.yaml` | `.fab7/rf/deltas/practice/software-development.yaml` |
-| Claude Code | `~/.fab7/rf/deltas/claude-code.yaml` | `.fab7/rf/deltas/claude-code.yaml` |
-| Codex | `~/.fab7/rf/deltas/codex.yaml` | `.fab7/rf/deltas/codex.yaml` |
+Profiles and catalogs are not shipped with the CLI. `ringframe init --global`
+downloads them from the [Fab7 marketplace](https://github.com/fab7hq/fab7) into
+your config home; `ringframe sync` is the same operation and is how you update.
+Neither ever runs by itself, so a prompt does not change under you.
 
-The installer or `ringframe init --global` seeds missing global files from the
-package. A delta read also initializes missing global catalogs. Existing files
-are preserved, including during upgrades; they are not silently refreshed with
-new packaged defaults. Run `ringframe init` from a consumer project to create
-its matching, initially empty files. First use also initializes them.
+```
+~/.fab7/rf/config/       the synced mirror — sync replaces it wholesale, so never edit it
+  harnesses/<host>.yaml  capability profiles
+  deltas/<host>.yaml     host rules
+  deltas/practices/<domain>.yaml
+  .revision              the bundle tag this mirror came from
+~/.fab7/rf/overrides/    your personal rules — sync never touches these
+  deltas/<same layout>
+<project>/.fab7/rf/deltas/<same layout>
+```
 
-Configuration is read on each CLI invocation. Profiles remain package-owned;
-Ask/Eval/Seal records share `.fab7/rf/` with the project delta catalogs.
-Only the paths above are read; legacy configuration layouts are not migrated.
+Three layers, merged by entry `id` in that order: mirror, then your overrides,
+then the project. Later layers win. To change a rule for yourself, write only
+the fields you are changing into the matching file under `overrides/`; to
+change it for one project, write them into the project's file. `ringframe init`
+in a project creates its base-domain file, initially empty.
 
-Extend the existing catalogs. Dropping an arbitrarily named YAML file into the
-directory does not register a new host, domain, or selection rule. The shipped
-Ask workflow uses the `software-development` practice domain.
-
-Use block-style mappings with two-space indentation and compact lists for short
-vocabularies, as in the examples below. Project files are partial overrides of
-the same catalog structure.
+`ringframe init --global --from <dir>` installs from a local directory instead
+of downloading, which is the offline path. Every render records the mirror's
+`.revision`, so a receipt says which rules were in force. Configuration is read
+on each invocation. Legacy layouts are not migrated.
 
 ## Merge rules
 
@@ -108,6 +111,10 @@ file. Combine it with other overrides in a single `entries` list.
 | `concerns` | List of concern names; a situational entry needs at least one match. |
 | `requires.host_capability` | Currently recognizes `subagents`; excludes the entry when the profile does not declare sub-agent support. This does not prove the tool is exposed. |
 
+A practice catalog also carries a top-level `description`, one line saying what
+work the domain covers. Ask matches an intent against it, so write it as the
+subject matter, not as a slogan.
+
 `render` supports only `heading` and `core_cap`, shown above. Keep `heading` as
 `Rules:` for the shipped composed-prompt workflow; its audit expects that heading.
 `core_cap` defaults to `5`; use a nonnegative integer. It caps core entries only,
@@ -169,6 +176,44 @@ the ordinary core cap so experiments can add them without displacing defaults.
 This flag also includes candidate **host** rules. Ordinary `ask compile`
 recomputes its rules with the default status filter; changing a standalone
 render command does not enable candidate rules in the shipped Ask workflow.
+
+## Practice domains
+
+`software-development` is the **base** domain and always renders. Any other
+catalog in `deltas/practices/` is a **specialist** domain, added on top when
+the Ask classification names it in `domains`. Specialist rules never replace
+base rules: a trading system is still software.
+
+```sh
+ringframe deltas domains --json
+```
+
+lists every installed domain with its `description`, concern vocabulary, and
+`project_opted_in`, which is true when the project has a non-empty file for
+that domain. Ask reads exactly that: it adds a specialist domain when the
+intent is within its description or touches its concerns, and leans toward
+adding one the project has opted into. Opting a project in means creating
+`<project>/.fab7/rf/deltas/practices/<domain>.yaml` with its header.
+
+Each catalog applies its own `core_cap`, and the rendered `Rules:` block is
+base rules first, then each specialist's, in the order the classification names
+them. Concerns are validated against the union of the selected domains'
+vocabularies, so a concern only a specialist declares is accepted only when
+that domain is selected. Naming a domain that is not installed fails the Ask
+and lists what is installed; it is never silently ignored.
+
+`practice.domains` in the record names every catalog that contributed, with
+what each selected and dropped.
+
+### Adding a domain
+
+Add one file to `deltas/practices/<domain>.yaml`, in the marketplace or in your
+overrides. Its `domain` key must equal the file name, it needs a `description`,
+and its `concerns` list is that domain's whole vocabulary. No code changes
+anywhere; `deltas domains` picks it up.
+
+Keep a specialist `core_cap` low. It is additive, so its core rules land on top
+of the base's five.
 
 ## Host catalog
 
