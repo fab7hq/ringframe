@@ -355,3 +355,71 @@ def test_deltas_domains_and_unknown_domain_is_refused(repo, tmp_path, monkeypatc
     code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "T", "--capability", "native_plan",
                        "--classification", cls, "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
     assert code == 2 and out["error"] == "ask.classification" and "installed" in out["detail"]
+
+
+# ---- output modes ------------------------------------------------------------------------------
+
+def test_minimal_and_json_are_mutually_exclusive(repo, monkeypatch):
+    with pytest.raises(SystemExit) as exc:  # argparse rejects it before any command runs
+        run(repo, "profile", "show", "--host", "claude-code", "--json", "--minimal", monkeypatch=monkeypatch)
+    assert exc.value.code == 1
+
+
+def test_minimal_emits_compact_json(repo, monkeypatch):
+    _, out, _ = run(repo, "profile", "show", "--host", "claude-code", "--minimal", monkeypatch=monkeypatch)
+    assert isinstance(out, dict)  # still JSON the skill can address by name
+    _, raw, _ = run(repo, "ask", "list", "--minimal", monkeypatch=monkeypatch)
+    assert isinstance(raw, dict)
+
+
+def test_minimal_profile_keeps_only_what_routing_reads(repo, monkeypatch):
+    _, out, _ = run(repo, "profile", "show", "--host", "claude-code", "--minimal", monkeypatch=monkeypatch)
+    assert set(out) == {"host", "routing", "capabilities"}
+    assert set(out["capabilities"][0]) <= {
+        "id", "selection", "effects", "confirmation", "activation", "delivery_mode",
+        "continuation", "limitations", "requires_explicit_request_for_effects"}
+    assert out["capabilities"][0]["selection"] and out["routing"]["precedence"]
+
+
+def test_minimal_is_smaller_than_json_for_the_calls_ask_makes(repo, monkeypatch):
+    confirm(repo, monkeypatch)  # ask list is only interesting with an Ask on record
+    for args in (["profile", "show", "--host", "claude-code"], ["deltas", "domains"], ["ask", "list"]):
+        _, full, _ = run(repo, *args, "--json", monkeypatch=monkeypatch)
+        _, small, _ = run(repo, *args, "--minimal", monkeypatch=monkeypatch)
+        assert len(json.dumps(small)) < len(json.dumps(full)), args
+
+
+def test_a_command_without_a_projection_still_emits_its_full_result(repo, monkeypatch):
+    _, full, _ = run(repo, "ledger", "verify", "--json", monkeypatch=monkeypatch)
+    _, small, _ = run(repo, "ledger", "verify", "--minimal", monkeypatch=monkeypatch)
+    assert small == full  # nothing is hidden by omission
+
+
+def test_minimal_changes_what_is_shown_never_what_is_stored(repo, monkeypatch):
+    """The same Ask compiled either way records the same event; only the printout differs."""
+    def compile_with(flag, stage, session):
+        code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo, stage), "--title", "Login",
+                           "--capability", "native_plan", "--classification", CLS, "--route", ROUTE,
+                           "--host", host(session), flag, monkeypatch=monkeypatch)
+        assert code == 0
+        return out
+
+    shown_json = compile_with("--json", "j1", "s1")
+    shown_min = compile_with("--minimal", "m1", "s2")
+    assert set(shown_min) < set(shown_json)  # the printout is narrower
+
+    events = [json.loads(l) for l in (repo / ".fab7/rf/ledger.jsonl").read_bytes().splitlines()]
+    compiled = [e["data"] for e in events if e["type"] == "ask.compiled"]
+    assert len(compiled) == 2
+    first, second = compiled
+    assert first.keys() == second.keys()          # the record is unchanged in shape
+    assert first["compiler"] == second["compiler"]  # and in its selection provenance
+
+
+def test_minimal_leaves_a_text_result_as_text(repo, monkeypatch):
+    """`deltas render` and the delivery handoff already return prose; minimal must not quote it."""
+    _, plain, _ = run(repo, "deltas", "render", "--host", "claude-code", "--capability", "native_plan",
+                      "--classification", CLS, monkeypatch=monkeypatch)
+    _, small, _ = run(repo, "deltas", "render", "--host", "claude-code", "--capability", "native_plan",
+                      "--classification", CLS, "--minimal", monkeypatch=monkeypatch)
+    assert small == plain and small.startswith("Rules:")

@@ -1,5 +1,10 @@
-"""`ringframe` command line. Every command prints one JSON object with --json; exit codes:
-0 ok, 1 usage, 2 refused by a rule, 3 needs input, 4 internal."""
+"""`ringframe` command line.
+
+Three output modes: `--minimal` prints only the fields a decision needs, compactly, for an
+agent reading mid-conversation; `--json` prints everything, for people, scripts and audits;
+neither prints plain text. Minimal changes what is shown, never what is recorded.
+
+Exit codes: 0 ok, 1 usage, 2 refused by a rule, 3 needs input, 4 internal."""
 
 import argparse
 import json
@@ -20,13 +25,54 @@ def _json_arg(text: str):
     return json.loads(text)
 
 
-def _emit(obj, as_json=True):
-    if as_json:
-        print(json.dumps(obj, ensure_ascii=False, indent=2))
-    elif isinstance(obj, str):
+def _emit(obj, as_json=True, minimal=False):
+    if minimal and not isinstance(obj, str):
+        print(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+    elif minimal:  # a command whose result is already text stays text
         print(obj, end="" if obj.endswith("\n") else "\n")
-    else:
+    elif as_json or not isinstance(obj, str):
         print(json.dumps(obj, ensure_ascii=False, indent=2))
+    else:
+        print(obj, end="" if obj.endswith("\n") else "\n")
+
+
+# What each command shows under --minimal: only the fields a skill reads to decide. A command
+# with no entry here emits its full result compactly, so nothing is hidden by omission.
+CAPABILITY_KEYS = ("id", "selection", "effects", "confirmation", "activation",
+                   "delivery_mode", "continuation", "limitations", "requires_explicit_request_for_effects")
+DOMAIN_KEYS = ("domain", "base", "description", "concerns", "project_opted_in")
+ASK_LIST_KEYS = ("ask_id", "title", "state", "capability")
+ASK_SHOW_KEYS = ("ask_id", "title", "state", "capability", "prompt_path", "source_verified")
+
+
+def _pick(d: dict, keys) -> dict:
+    return {k: d[k] for k in keys if k in d}
+
+
+MINIMAL = {
+    ("profile", "show"): lambda d: {"host": d["host"], "routing": d["routing"],
+                                    "capabilities": [_pick(c, CAPABILITY_KEYS) for c in d["capabilities"]]},
+    ("deltas", "domains"): lambda d: {"domains": [_pick(x, DOMAIN_KEYS) for x in d["domains"]]},
+    ("ask", "compile"): lambda d: _pick(d, ("ask_id", "prompt_path", "delivery_mode", "source_verified")),
+    ("ask", "confirm"): lambda d: _pick(d, ("ask_id", "confirmation")),
+    ("ask", "cancel"): lambda d: _pick(d, ("ask_id", "state")),
+    ("ask", "delivery"): lambda d: _pick(d, ("ask_id", "mode", "state")),
+    ("ask", "submitted"): lambda d: _pick(d, ("ask_id", "state")),
+    ("ask", "list"): lambda d: {"asks": [_pick(a, ASK_LIST_KEYS) for a in d["asks"]]},
+    ("ask", "show"): lambda d: _pick(d, ASK_SHOW_KEYS),
+    ("eval", "open"): lambda d: {**_pick(d, ("eval_id", "brief_path", "changes")),
+                                 "anchor": d["anchor"]["ref"], "subject": d["subject"]["kind"]},
+    ("eval", "close"): lambda d: _pick(d, ("eval_id", "verdict", "confidence")),
+    ("eval", "list"): lambda d: {"evals": [_pick(e, ("eval_id", "verdict", "confidence", "state")) for e in d["evals"]]},
+    ("seal", "create"): lambda d: _pick(d, ("seal_id", "disposition")),
+    ("seal", "check"): lambda d: _pick(d, ("seal_id", "fresh", "subject_matches")),
+}
+
+
+def _project(ns, result):
+    """Narrow a command's result for --minimal; unknown commands pass through."""
+    fn = MINIMAL.get((ns.cmd, getattr(ns, "sub", None)))
+    return fn(result) if fn and isinstance(result, dict) else result
 
 
 def _actor(text: str | None, authority: str) -> dict:
@@ -49,7 +95,7 @@ class _Parser(argparse.ArgumentParser):
         raise SystemExit(1)
 
 
-GLOBAL_FLAGS = {"--json": 0, "--workspace": 1, "--actor": 1, "--authority": 1}
+GLOBAL_FLAGS = {"--json": 0, "--minimal": 0, "--workspace": 1, "--actor": 1, "--authority": 1}
 
 
 def _hoist_globals(argv):
@@ -68,7 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = _Parser(prog="ringframe", description=__doc__)
     p.add_argument("--version", action="version", version=f"ringframe {__version__}")
     p.add_argument("--workspace", type=Path, help="project root (default: current directory; hook payload cwd for hooks)")
-    p.add_argument("--json", action="store_true")
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument("--json", action="store_true", help="every field, pretty-printed, for scripts and audits")
+    mode.add_argument("--minimal", action="store_true", help="only the fields a decision needs, compact, for an agent")
     p.add_argument("--actor", help="kind:id, default human:local-user")
     p.add_argument("--authority", choices=["interactive", "preauthorized"], default="interactive")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -298,19 +346,19 @@ def main(argv=None) -> int:
     try:
         code, result = _dispatch(ns, ws)
     except (json.JSONDecodeError, ValueError, FileNotFoundError) as exc:
-        _emit({"error": "usage", "detail": str(exc)}, ns.json)
+        _emit({"error": "usage", "detail": str(exc)}, ns.json, ns.minimal)
         return 1
     except (NeedsInput, evaluate.NeedsInput) as exc:
-        _emit({"needs_input": exc.reason, "candidates": exc.candidates}, ns.json)
+        _emit({"needs_input": exc.reason, "candidates": exc.candidates}, ns.json, ns.minimal)
         return 3
     except Refused as exc:
-        _emit({"error": "seal.refused", "refusal_codes": exc.codes}, ns.json)
+        _emit({"error": "seal.refused", "refusal_codes": exc.codes}, ns.json, ns.minimal)
         return 2
     except (LedgerError, workspace.WorkspaceError) as exc:
-        _emit({"error": exc.code, "detail": exc.detail}, ns.json)
+        _emit({"error": exc.code, "detail": exc.detail}, ns.json, ns.minimal)
         return 2
     except config.ConfigError as exc:
-        _emit({"error": "config", "detail": str(exc)}, ns.json)
+        _emit({"error": "config", "detail": str(exc)}, ns.json, ns.minimal)
         return 2
     except Exception as exc:  # pragma: no cover - internal
         print(f"ringframe: internal error: {exc!r}", file=sys.stderr)
@@ -318,5 +366,5 @@ def main(argv=None) -> int:
     if ns.cmd == "ask" and getattr(ns, "sub", None) == "copy":
         sys.stdout.write(str(result))
         return code
-    _emit(result, ns.json)
+    _emit(_project(ns, result) if ns.minimal else result, ns.json, ns.minimal)
     return code

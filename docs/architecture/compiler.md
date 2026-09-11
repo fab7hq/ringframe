@@ -78,9 +78,27 @@ ringframe deltas render --host codex --capability native_plan \
   --classification '{"task":["implement"],"result":"workspace_change","interaction":"approval_gated","horizon":"session","effects":["write"],"concerns":["api_surface"]}'
 ```
 
-Add `--json` to `render` when you want the full picture — which rules were
-selected, which were dropped for length, which files contributed, and their
-digests. Without it you get just the rules, which is all the skill needs.
+## Three ways to read the CLI
+
+Every command prints one of three things, and who is reading decides which:
+
+| Flag | Reader | Output |
+| --- | --- | --- |
+| `--minimal` | your agent, mid-conversation | only the fields a decision needs, compact |
+| `--json` | you, a script, an audit | every field, pretty-printed |
+| neither | you, at a terminal | plain text |
+
+The skills always pass `--minimal`. `--json` carries digests, contributing
+files, dropped rules and provenance — all of it useful to you later, none of it
+changing a word your agent writes. On one Ask that difference is about 16,000
+characters.
+
+`--minimal` only narrows what is *printed*. The full detail is recorded either
+way, so a receipt written from a minimal run is identical to one written from
+a verbose run. The two flags cannot be combined.
+
+A command whose answer is already prose — `deltas render`, the delivery
+handoff — prints the same text under `--minimal` as without it.
 
 Every Ask records the same detail under `ask.compiled.data.compiler`, so you can
 always reconstruct which rules were in force for a prompt written months ago.

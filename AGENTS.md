@@ -11,8 +11,9 @@
   uv build
   ```
 
-- Put core changes in `core/ringframe/`, tests in `core/tests/`, and host
-  instructions in `plugins/claude/` or `plugins/codex/`.
+- Put core changes in `core/ringframe/` and tests in `core/tests/`. Host
+  profiles, delta catalogs, and skills live in `fab7hq/fab7`, not here; this
+  repository ships no configuration.
 - Use disposable consumer workspaces for CLI examples and tests. Never create
   `.fab7/` in this source repository or commit ledgers, runs, plans, changelogs,
   dated notes, or task IDs.
@@ -27,8 +28,10 @@
   ledger lines immutable; correct them with new records and typed links.
 - Preserve public JSON keys, schemas, and exit codes from 0.0.1 onward. Extend
   contracts compatibly; do not silently remove or rename fields.
-- Preserve global-option placement: `--json`, `--workspace`, `--actor`, and
-  `--authority` may appear before or after subcommands.
+- Preserve global-option placement: `--json`, `--minimal`, `--workspace`,
+  `--actor`, and `--authority` may appear before or after subcommands.
+- Keep `--json` the complete view and `--minimal` a projection of it. Adding a
+  field is a `--json` change; showing it to an agent is a separate decision.
 - Keep hook scripts non-blocking and exiting 0, including on malformed input
   or a missing CLI. Record delivery only from the appropriate evidence.
 - Mark source text verified only when it matches a captured Ask invocation
