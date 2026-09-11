@@ -1,60 +1,74 @@
-# Delta configuration and extension
+# Rules
 
-Deltas are standing instructions that Ask selects from YAML and adapts to the
-user's task. Use practice deltas for engineering preferences shared across
-harnesses, and host deltas for instructions tied to one native capability.
-Profiles define available capability routes; deltas do not add routes or tools.
-The [compiler](compiler.md) owns prompt composition and provenance.
+**The profile says what your agent can do. The rules say what to tell it while
+it does that.**
 
-## Where configuration comes from
+Rules are standing instructions. You write them once; Ask picks the ones that
+fit each task and your agent applies them to the specifics.
 
-Profiles and catalogs are not shipped with the CLI. `ringframe init --global`
-downloads them from the [Fab7 marketplace](https://github.com/fab7hq/fab7) into
-your config home; `ringframe sync` is the same operation and is how you update.
-Neither ever runs by itself, so a prompt does not change under you.
+There are two kinds, and they answer different questions:
+
+| | **Practice rules** | **Host rules** |
+| --- | --- | --- |
+| Answer | "However you do this, remember X." | "While in Plan mode, remember X." |
+| Chosen by | what the task *is* — planning, implementing, what it touches | which route the Ask took |
+| Live in | `deltas/practices/<domain>.yaml` | `deltas/<host>.yaml` |
+| Example | *Write the failing test first.* | *Verify the paths you name exist.* |
+
+Neither kind can give your agent a new ability. That is the profile's job, in
+`harnesses/<host>.yaml`, and you do not normally edit it.
+
+## Where rules come from
+
+Nothing ships inside the CLI. `ringframe init --global` downloads rules from the
+[Fab7 marketplace](https://github.com/fab7hq/fab7); `ringframe sync` is the same
+command and is how you update later.
+
+Neither runs on its own, so your prompts never change underneath you.
 
 ```
-~/.fab7/rf/config/       the synced mirror — sync replaces it wholesale, so never edit it
-  harnesses/<host>.yaml  capability profiles
-  deltas/<host>.yaml     host rules
-  deltas/practices/<domain>.yaml
-  .revision              the bundle tag this mirror came from
-~/.fab7/rf/overrides/    your personal rules — sync never touches these
-  deltas/<same layout>
-<project>/.fab7/rf/deltas/<same layout>
+~/.fab7/rf/config/       downloaded — sync overwrites this, so do not edit it
+  harnesses/<host>.yaml    what each agent can do
+  deltas/<host>.yaml       rules for one route
+  deltas/practices/<domain>.yaml   rules for a kind of work
+  .revision                which release this came from
+~/.fab7/rf/overrides/    yours — sync never touches this
+  deltas/<same shape>
+<project>/.fab7/rf/deltas/<same shape>    this project's
 ```
 
-Three layers, merged by entry `id` in that order: mirror, then your overrides,
-then the project. Later layers win. To change a rule for yourself, write only
-the fields you are changing into the matching file under `overrides/`; to
-change it for one project, write them into the project's file. `ringframe init`
-in a project creates its base-domain file, initially empty.
+**Three layers, and the later one wins:** downloaded, then yours, then this
+project's.
 
-`ringframe init --global --from <dir>` installs from a local directory instead
-of downloading, which is the offline path. Every render records the mirror's
-`.revision`, so a receipt says which rules were in force. Configuration is read
-on each invocation. Legacy layouts are not migrated.
+So: to change a rule everywhere you work, edit it under `overrides/`. To change
+it for one project only, edit it in that project. Never edit `config/` — the
+next sync will throw your change away.
 
-## Merge rules
+You only write the fields you are changing. Everything else is inherited.
 
-The CLI merges the global file with the matching project file. Project fields
-win conflicts; this is configuration precedence, not rendering priority.
+`ringframe init --global --from <dir>` installs from a folder instead of
+downloading, for machines with no network. Every prompt records which release
+its rules came from, so a receipt tells you what was in force at the time.
 
-| Project value | Result |
+## How layers merge
+
+Rules are matched up by their `id`. A later layer changes only the fields it
+mentions:
+
+| What your file has | What happens |
 | --- | --- |
-| Empty or comment-only file | Inherit the complete global catalog. |
-| Mapping | Merge recursively; project fields override matching global fields. |
-| Nonempty list of entries keyed by `id` | Merge matching entries; append new IDs. |
-| Other list or scalar | Replace the global value. |
-| `entries: []` | Clear all entries in this catalog. |
-| Entry with `enabled: false` | Keep the entry configured but exclude it from rendering. |
+| nothing, or only comments | You get everything from the layer below. |
+| a rule with an `id` that already exists | Your fields replace those fields. The rest is inherited. |
+| a rule with a new `id` | It is added, after the inherited ones. |
+| `enabled: false` on a rule | The rule stays configured but stops appearing in prompts. |
+| `entries: []` | Every rule in this file is cleared. |
+| any other list or single value | It replaces the one below outright. |
 
-An override can contain only the fields you change. Keep IDs unique and stable.
-Updating an existing ID retains its position in the merged catalog; a new
-project ID is appended after global entries. Restoring an empty project file
-restores inheritance. Use `[]` to clear a list; YAML `null` is not an empty list.
+Keep ids unique and do not rename them — a receipt written last month refers to
+them. Emptying your file again restores what you inherited. To clear a list use
+`[]`; YAML `null` is not an empty list.
 
-For example, change KISS and disable YAGNI in one project:
+For example, reword KISS and switch YAGNI off, for one project:
 
 ```yaml
 entries:
@@ -64,10 +78,10 @@ entries:
     enabled: false
 ```
 
-## Practice catalog
+## Writing a practice rule
 
-A complete global practice catalog has this shape. A project override inherits
-the header and only needs the fields it changes.
+Here is a whole file. Yours only needs the parts you are changing — the header
+is inherited.
 
 ```yaml
 schema: ringframe.deltas/1
@@ -94,131 +108,142 @@ entries:
       are met. Use appropriate checks for non-code tasks.
 ```
 
-To add this rule to a project, copy only the `entries` section into its practice
-file. Combine it with other overrides in a single `entries` list.
+To add that rule to one project, copy just the `entries` part into the
+project's file, alongside any other changes you are making.
 
-| Entry field | Meaning and default |
+**The three fields every rule needs:**
+
+| Field | What it is |
 | --- | --- |
-| `id` | Required stable identifier; used for merging and provenance. |
-| `text` | Required instruction text; write a concrete action. |
-| `applies_to` | Required mapping of classification filters; `{}` matches any classification. |
-| `label` | Short Rules label. Falls back to `principle`, then the final component of `id`. Use distinct labels without commas, colons, or ` and `. |
-| `principle` | Optional descriptive name and alternative audit label. |
-| `enabled` | Only the boolean `false` disables an entry. |
-| `status` | Defaults to `attributed`; see selection below. |
-| `tier` | `core`, `situational` (default), or `reference`. |
-| `priority` | Numeric sort order, default `100`; lower values render earlier within a tier. |
-| `concerns` | List of concern names; a situational entry needs at least one match. |
-| `requires.host_capability` | Currently recognizes `subagents`; excludes the entry when the profile does not declare sub-agent support. This does not prove the tool is exposed. |
+| `id` | Its name. Never change it — receipts refer to it. |
+| `text` | The instruction. Write something concrete and doable. |
+| `applies_to` | When it applies. `{}` means always. |
 
-A practice catalog also carries a top-level `description`, one line saying what
-work the domain covers. Ask matches an intent against it, so write it as the
-subject matter, not as a slogan.
+**The ones that shape how it shows up:**
 
-`render` supports only `heading` and `core_cap`, shown above. Keep `heading` as
-`Rules:` for the shipped composed-prompt workflow; its audit expects that heading.
-`core_cap` defaults to `5`; use a nonnegative integer. It caps core entries only,
-not situational or host rules.
+| Field | What it does |
+| --- | --- |
+| `label` | The short tag in the `Rules:` line. No commas, colons, or the word "and" — those split a line into two labels. |
+| `tier` | `core` = always applies. `situational` (the default) = only when a concern matches. `reference` = never rendered. |
+| `priority` | Lower goes first. Default `100`. |
+| `concerns` | What this rule is about. **A situational rule with no concerns can never be picked.** |
+| `enabled: false` | Turn it off without deleting it. |
+| `status` | `attributed` (the default) and `qualified` are used; `candidate` and `retired` are not. |
+| `requires.host_capability` | Only `subagents` is understood: skip this rule when the agent has no sub-agents. |
 
-Metadata such as `source`, `why`, and `evidence` describes a rule but does not
-run a check or change practice matching.
+At the top of the file, `description` is one line saying what kind of work this
+domain covers. Ask reads it to decide whether the domain applies, so write the
+subject matter, not a slogan.
 
-### Classification filters
+`render` takes two settings. Leave `heading` as `Rules:` — the prompt check
+expects it. `core_cap` is how many `core` rules may appear; it defaults to `5`
+and does not limit situational or host rules.
 
-`applies_to` supports three optional lists. Populated filters must all match;
-within each list, one matching value is enough. Missing or empty filters impose
-no restriction.
+`source`, `why`, and `evidence` are notes for whoever reads the file. They
+change nothing.
 
-| Filter | Values used by Ask |
+### Saying when a rule applies
+
+`applies_to` takes up to three lists. **Within one list, any value matches.
+Across lists, all of them must.** Leave a list out and it places no restriction.
+
+| List | Values |
 | --- | --- |
 | `task` | `question`, `research`, `clarify`, `plan`, `implement`, `diagnose`, `review`, `operate`, `document` |
 | `result` | `answer`, `plan`, `workspace_change`, `evidence`, `continuing_objective` |
 | `effects` | `read`, `write`, `execute`, `external_effect` |
 
-For example, `task: [plan, implement]` means plan **or** implement. Adding
-`result: [continuing_objective]` also requires that result. `interaction` and
-`horizon` guide routing but are not delta filters. Use `result` when targeting
-a continuing objective; there is no `task: goal` classification.
+So `task: [plan, implement]` means plan **or** implement. Add
+`result: [continuing_objective]` and now it must be one of those *and* a
+continuing objective.
 
-Situational rules additionally match the classification's `concerns`. The
-catalog's top-level `concerns` is the vocabulary Ask can use. Adding a custom
-concern in a project replaces that vocabulary list, so include the existing
-names you still need. A situational rule with no matching concern is not
-selected, even if its task matches.
+There is no `task: goal` — a long-running objective is `result:
+continuing_objective`.
 
-### Selection, priority, and budgets
+Situational rules need one more thing: a matching **concern**. The `concerns`
+list at the top of the file is the whole vocabulary Ask may use. If you add your
+own concern in a project, that replaces the list, so copy across the existing
+names you still want.
 
-For practice entries the CLI:
+A situational rule whose concern never matches simply never appears, even when
+its task fits perfectly. That is the single most common reason a rule you wrote
+does not show up.
 
-1. Excludes disabled entries, ineligible statuses, nonmatching filters, and
-   unsupported `requires.host_capability: subagents` entries.
-2. Groups eligible entries into core and matching situational rules. Reference
-   rules never render.
-3. Sorts each group by ascending `priority`, then merged catalog order for ties.
-4. Keeps at most `core_cap` ordinary core rules, followed by eligible
-   situational rules. Host directives are rendered separately before practices.
+### Which rules make the cut
 
-A project override wins a field conflict regardless of priority. A **new**
-project rule still competes with global core rules for the cap. For example,
-with a cap of five and five earlier matching global rules at priority `100`, a
-new project core rule at `100` is omitted. Giving it `10` selects it earlier
-and can displace the last global rule. Raising the cap keeps more rules but
-also lengthens the prompt. Inspect `dropped_by_budget` before assuming a rule
-will reach Ask.
+For each Ask, the CLI:
 
-Practice statuses `attributed` and `qualified` are eligible by default;
-`candidate` and `retired` are excluded. A personal rule can use `attributed`;
-`qualified` is a declared metadata value, not a test performed by the CLI.
+1. Throws out rules that are disabled, `candidate` or `retired`, do not match
+   the task, or need sub-agents the agent does not have.
+2. Splits the rest into **core** and **matching situational**. `reference`
+   rules never appear.
+3. Sorts each group by `priority`, lowest first, ties broken by file order.
+4. Keeps at most `core_cap` core rules, then adds every matching situational
+   one. Host rules go above all of them.
 
-For isolated evaluation, `deltas render --statuses qualified,candidate` also
-includes candidate practice entries. Candidate core rules are appended beyond
-the ordinary core cap so experiments can add them without displacing defaults.
-This flag also includes candidate **host** rules. Ordinary `ask compile`
-recomputes its rules with the default status filter; changing a standalone
-render command does not enable candidate rules in the shipped Ask workflow.
+**Your rule can lose to the cap.** A new project rule competes with the
+inherited core rules: with a cap of five and five inherited rules already at
+priority `100`, yours is dropped. Give it `priority: 10` and it goes first —
+pushing out the last inherited one instead.
 
-## Practice domains
+If a rule you wrote is not appearing, check `dropped_by_budget` in the render
+output before assuming something is broken. Raising the cap keeps more rules
+but makes every prompt longer.
 
-`software-development` is the **base** domain and always renders. Any other
-catalog in `deltas/practices/` is a **specialist** domain, added on top when
-the Ask classification names it in `domains`. Specialist rules never replace
-base rules: a trading system is still software.
+On `status`: your own rules should be `attributed`, which is the default.
+`qualified` means somebody measured it, and nothing in the CLI checks that — it
+is a note, not a test. `candidate` and `retired` rules are skipped.
+
+`deltas render --statuses qualified,candidate` also shows candidate rules, for
+when you are trying something out. It changes nothing about a real Ask.
+
+## Domains: rules for a kind of work
+
+`software-development` is the **base** domain. It always applies.
+
+Any other file in `deltas/practices/` is a **specialist** domain, added *on top*
+when the work calls for it. A trading system is still software, so the trading
+rules join the engineering rules rather than replacing them.
 
 ```sh
 ringframe deltas domains --json
 ```
 
-lists every installed domain with its `description`, concern vocabulary, and
-`project_opted_in`, which is true when the project has a non-empty file for
-that domain. Ask reads exactly that: it adds a specialist domain when the
-intent is within its description or touches its concerns, and leans toward
-adding one the project has opted into. Opting a project in means creating
-`<project>/.fab7/rf/deltas/practices/<domain>.yaml` with its header.
+That lists every domain you have, what each covers, its concerns, and whether
+this project opted in. Ask reads exactly that, then adds a specialist domain
+when your intent is about that subject or touches its concerns — leaning
+towards one the project opted into.
 
-Each catalog applies its own `core_cap`, and the rendered `Rules:` block is
-base rules first, then each specialist's, in the order the classification names
-them. Concerns are validated against the union of the selected domains'
-vocabularies, so a concern only a specialist declares is accepted only when
-that domain is selected. Naming a domain that is not installed fails the Ask
-and lists what is installed; it is never silently ignored.
+**To opt a project in**, create
+`<project>/.fab7/rf/deltas/practices/<domain>.yaml` with its header. That is all
+opting in means: a nudge, not a switch. Ask still leaves a specialist domain out
+when your request is clearly unrelated.
 
-`practice.domains` in the record names every catalog that contributed, with
-what each selected and dropped.
+Each domain gets its own `core_cap`, and the `Rules:` block is base rules first,
+then each specialist's. A concern that only a specialist defines is accepted
+only while that domain is in play. Naming a domain you do not have stops the Ask
+and tells you what you do have — it is never silently ignored.
+
+Every prompt records which domains contributed and what each one added or
+dropped.
 
 ### Adding a domain
 
-Add one file to `deltas/practices/<domain>.yaml`, in the marketplace or in your
-overrides. Its `domain` key must equal the file name, it needs a `description`,
-and its `concerns` list is that domain's whole vocabulary. No code changes
-anywhere; `deltas domains` picks it up.
+One file in `deltas/practices/<domain>.yaml`, either in the marketplace or in
+your own `overrides/`. It needs:
 
-Keep a specialist `core_cap` low. It is additive, so its core rules land on top
-of the base's five.
+- a `domain:` key matching the file name
+- a `description:` — one line on what work it covers, which is how Ask decides
+- a `concerns:` list, which is that domain's whole vocabulary
 
-## Host catalog
+No code changes anywhere. `deltas domains` will find it.
 
-Host entries match a profile capability exactly, rather than practice task
-filters. A full host catalog has this structure:
+Keep a specialist `core_cap` small. Its core rules stack on top of the base's
+five, and long prompts get skimmed.
+
+## Writing a host rule
+
+A host rule attaches to one route, by name. No task filters, no concerns.
 
 ```yaml
 schema: ringframe.deltas/1
@@ -235,61 +260,53 @@ entries:
     matrix_ref: https://code.claude.com/docs/en/goal
 ```
 
-To extend a project catalog, copy only its `entries` section. Use `host: codex`
-and Codex capability IDs when authoring a full Codex catalog.
+Each one needs `id`, `capability`, `text`, `matrix_ref`, and `status`. Use
+`host: codex` and Codex route names for a Codex file.
 
-Each host entry requires `id`, `capability`, `text`, `matrix_ref`, and `status`.
-`label` is optional and defaults to the final component of `id`; `enabled: false`
-excludes the entry. Valid statuses are `candidate`, `qualified`, and `retired`;
-only `qualified` renders by default. The shipped host entries are candidates.
-Optional `why` and `evidence` fields describe provenance, not executable checks.
+**The `capability` must be a route the profile actually has.** Check with
+`ringframe profile show` — you cannot invent one here. That is the division
+again: the profile says what your agent can do, this says what to tell it while
+it does that.
 
-Host entries retain merged catalog order. Practice fields such as `priority`,
-`tier`, `applies_to`, and `concerns` do not control host selection. `matrix_ref`
-is descriptive provenance; the CLI does not fetch it or check the linked page.
-Use the profile's capability IDs from `ringframe profile show`, not a new ID
-invented in the delta file.
+Two things to know:
 
-## Inspect and preview
+- **Only `qualified` host rules appear.** Everything shipped today is
+  `candidate`, so no host rule reaches a prompt by default.
+- Practice fields — `priority`, `tier`, `applies_to`, `concerns` — mean nothing
+  here. Host rules keep file order.
 
-Run these from the consumer project whose overrides you want to inspect:
+`matrix_ref` points at the documentation the rule came from. Nothing fetches it.
+
+## Checking your work
+
+Run these inside the project you want to inspect:
 
 ```sh
+ringframe deltas domains --json
 ringframe deltas list --effective --json
-ringframe deltas list --host claude-code --json
 ringframe profile show --host claude-code --json
-ringframe deltas render --host claude-code --capability native_plan   --classification '{"task":["plan"],"result":"plan","interaction":"approval_gated","horizon":"session","effects":["read"]}' --json
+ringframe deltas render --host claude-code --capability native_plan \
+  --classification '{"task":["plan"],"result":"plan","interaction":"approval_gated","horizon":"session","effects":["read"]}'
 ```
 
-For a Goal preview, use `--capability native_goal` and a classification with
-`task: [implement]`, `result: continuing_objective`, `horizon: persistent`,
-and the intended effects. These are previews; they do not launch a native
-capability. `list --effective` reports merged practice entries and the last
-scope that contributed to each entry, not the final selected set.
+`deltas list --effective` shows every merged rule and which layer it came from.
+`deltas render` shows what an Ask like that would actually get; add `--json` for
+the full picture, including what was dropped for length. These only preview —
+nothing is launched, nothing is recorded.
 
-The render output exposes `practice.selected`, `practice.dropped_by_budget`,
-`practice.entries`, `host.entries`, matching concerns, and catalog digests.
-Composed Ask records also report applied and omitted IDs. A selected rule can
-still be omitted or poorly applied during model composition; inspect the
-stored prompt rather than treating selection as proof of behavior.
+**When a rule does not do what you expected:**
 
-| Symptom | Check |
+| What you see | Look at |
 | --- | --- |
-| Project entry has no effect | Current workspace, exact catalog filename, and matching entry ID. |
-| Entry is listed but not rendered | Status, enabled flag, filters, tier, concerns, and budget. |
-| New rule unexpectedly loses to defaults | Equal priorities retain global-first merged order. |
-| Unknown concern error | The merged top-level concern vocabulary. |
-| Rule renders but does not affect the prompt | Applied/omitted IDs and the composed Rules wording. |
-| Rule is present but the agent skips a step | Native behavior and execution evidence; deltas provide instructions, not enforcement. |
+| Your project rule changes nothing | Are you in the right project? Is the filename right? Does the `id` match exactly? |
+| It is in `list --effective` but not in the prompt | `status`, `enabled`, the filters, `tier`, `concerns`, and `dropped_by_budget`. |
+| Your new rule loses to the shipped ones | Equal priorities keep inherited rules first. Lower its `priority`. |
+| "unknown concern" | Your project replaced the `concerns` vocabulary. Copy back the names you still use. |
+| It appears in the prompt but reads oddly | The agent applies the rule to your task in its own words. Read the saved `prompt.txt`. |
+| It appears, and the agent ignored it anyway | Rules are instructions, not enforcement. Nothing makes an agent obey one. |
 
-Deltas guide how the native agent plans and works. [Eval](../commands/eval.md)
-compares the resulting diff with effective intent; it does not audit whether
-the agent followed the prescribed implementation sequence. Use a separate
-experiment to evaluate whether a delta produces the intended guidance or
-behavior.
-
-Thresholds and LLM-judge rubrics belong in the experiment definition. The delta
-format does not implement fuzzy scoring, test execution, or automatic review
-gates. See [LLM verification](../../LLM_VERIFICATION.md) when evaluating those
-behaviors. Source: [selection](../../core/ringframe/deltas.py) and
-[merging](../../core/ringframe/config.py).
+That last row is the honest limit. Rules shape what your agent is told.
+[Eval](../commands/eval.md) then compares what changed against what you asked
+for — but it reads the diff, not the agent's method. Whether a particular rule
+changes behaviour is a question for a real experiment, and
+[LLM verification](../../LLM_VERIFICATION.md) covers how to run one.

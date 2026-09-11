@@ -1,88 +1,90 @@
-# Prompt compiler
+# How a prompt gets built
 
-The CLI selects instruction deltas from YAML catalogs; the skill composes them
-into one optimized task brief followed by `Rules:`. Original user wording is
-stored separately in `source.txt`, not prepended to the optimized brief.
-The CLI adds the capability prefix only; it never prepends `source.txt`.
-Every candidate stages `source.txt` plus exactly one form:
+You type an intent. What reaches your agent is that intent, rewritten as a
+clear brief, with your standing rules listed underneath.
 
-| File | Processing | `compiler.source` |
-| --- | --- | --- |
-| `composed.txt` | Add the capability prefix; audit labelled `Rules:` lines against supplied directives. | `composed` |
-| `body.txt` | Add the prefix and append selected directives verbatim. | `body` |
-| `prompt.txt` | Preserve the supplied complete prompt; validate any required prefix. | `prompt` |
+```
+Add slippage and commission modelling to the backtester.
 
-`composed.txt` is the shipped skills' default; `body.txt` is a rendering baseline;
-`prompt.txt` is the legacy input. All forms validate concerns and capability
-length limits. Only the composed and body forms record catalog selection
-provenance; legacy input records `compiler.source` alone.
-
-## Research, profiles, and the coordinator
-
-```mermaid
-flowchart LR
-    R[Harness research] -->|Maintainer adoption| P[Packaged profiles]
-    P --> C[RingFrame CLI]
-    G[Global deltas] --> D[Merged deltas]
-    J[Project deltas] --> D
-    D --> C
-    C --> S[Ask coordinator skill]
-    S --> U[User confirmation]
-    U --> H[Native activation or handoff]
+Rules:
+- KISS: This project is a backtester; prefer one obvious function over a class.
+- Cost Realism: Account for every cost exactly once — commission, spread, …
 ```
 
-Harness research establishes documented mechanisms and evidence gaps. Maintainers
-map the subset RingFrame uses into `core/ringframe/profiles/`; each capability
-carries primary source URLs. Research documents stay outside the installed
-product and are not read during Ask.
+Two parts, and they come from different places. **The brief is written by your
+agent**, from your words. **The rules are chosen by the CLI**, from YAML files.
+Your agent never picks which rules apply, and the CLI never writes prose.
 
-`ringframe profile show --host <host> --json` exposes the profile's routing
-guidance and precedence, capability selection criteria, effects, confirmation,
-activation, continuation, delivery mode, and limitations. The coordinator reads
-this data before selecting a capability. It infers the intended outcome and
-continuation; users do not need to name native commands. Profiles remain
-package-owned and version-independent.
+Your original wording is kept untouched in `source.txt`. It is not pasted in
+front of the brief.
 
-The coordinator reads the merged concern vocabulary from `ringframe deltas list`
-when needed, then obtains selected directives with `ringframe deltas render`.
-It composes the brief, calls `ringframe ask compile`, and presents the stored
-prompt for confirmation. After confirmation, delivery follows the selected
-profile entry. Skills own this workflow; they do not contain a second routing
-table. The CLI validates the declared capability and records its profile digest;
-semantic suitability remains a model decision, evaluated probabilistically.
+## Picking the route, then the rules
 
-## Catalogs
+Before anything is written, the Ask skill asks two questions.
 
-The CLI reads global catalogs in `~/.fab7/rf/deltas/` and merges project
-configuration from `.fab7/rf/deltas/`. Project fields win conflicts. Practice
-rules match task classifications; host rules match capability IDs.
+**Where should this go?** It reads
+`ringframe profile show --host <host> --json` — the list of things your agent
+can do, and when each one fits. It decides from that. You never have to name a
+native command yourself.
 
-See [delta configuration](delta.md) for file layouts, extension fields, merge
-rules, priorities, selection budgets, and examples.
+**Which rules apply?** It describes your task to the CLI — is this planning or
+implementing, does it write files, what is it about — and runs
+`ringframe deltas render`, which prints the rules that match. The skill weaves
+those into the brief.
 
-Composed `Rules:` lines use supplied labels as traceability tags. The CLI
-audits labels and records applied and omitted directives; it does not judge
-whether the wording correctly applies the rule.
+Then it calls `ringframe ask compile`, shows you the finished prompt, and waits.
+Nothing is delivered until you confirm.
 
-## Inspect and trace
+The CLI checks that the route your agent named really exists in the profile and
+records which profile it used. Whether the route was a *sensible* choice is a
+judgement call by a model, and RingFrame reports it rather than guaranteeing it.
+
+## Three ways to stage a prompt
+
+Every Ask stages `source.txt` plus exactly one of these:
+
+| File | What the CLI does with it | Recorded as |
+| --- | --- | --- |
+| `composed.txt` | Your agent already wrote the `Rules:` lines. The CLI checks every label is one it supplied. | `composed` |
+| `body.txt` | Your agent wrote only the brief. The CLI appends the rules itself, word for word. | `body` |
+| `prompt.txt` | The whole prompt, as-is. Nothing is added. | `prompt` |
+
+`composed.txt` is what the shipped skills use, because applying a rule to your
+actual task reads better than pasting it. `body.txt` is the plain baseline.
+`prompt.txt` is the old form, kept working.
+
+The labels on each `Rules:` line are traceability tags. The CLI verifies each
+label names a rule it actually supplied, and records which rules were applied
+and which were dropped. It does **not** judge whether the sentence applies the
+rule correctly — that is prose, and no check can settle it.
+
+## Where the rules come from
+
+Three layers, merged by rule id, later winning:
+
+1. `~/.fab7/rf/config/` — what you synced from the marketplace
+2. `~/.fab7/rf/overrides/` — your personal changes
+3. `<project>/.fab7/rf/deltas/` — this project's changes
+
+[Rules](delta.md) covers the file formats, how merging works, priorities,
+budgets, and worked examples.
+
+## Looking at what happened
 
 ```sh
+ringframe deltas domains --json
 ringframe deltas list --effective --json
 ringframe deltas render --host codex --capability native_plan \
-  --classification '{"task":["implement"],"result":"workspace_change","interaction":"approval_gated","horizon":"session","effects":["write"],"concerns":["api_surface"]}' --json
+  --classification '{"task":["implement"],"result":"workspace_change","interaction":"approval_gated","horizon":"session","effects":["write"],"concerns":["api_surface"]}'
 ```
 
-`ask.compiled.data.compiler` records catalog digests, selected IDs, matching
-concerns, and budget omissions for rendered forms. Practice provenance includes both the
-shipped and effective catalog digests, plus the contributing file digests. Composed input also records
-applied and omitted IDs. Catalog identities hash canonical JSON parsed from YAML.
+Add `--json` to `render` when you want the full picture — which rules were
+selected, which were dropped for length, which files contributed, and their
+digests. Without it you get just the rules, which is all the skill needs.
 
-The Claude Code and Codex host catalogs each contain three candidate additions
-and are excluded by default. The practice catalog supplies the active default
-Rules. Catalog `matrix_ref` URLs and evidence identifiers are descriptive
-references; the CLI does not fetch them or require a documentation checkout.
+Every Ask records the same detail under `ask.compiled.data.compiler`, so you can
+always reconstruct which rules were in force for a prompt written months ago.
 
-Candidate text and successful composition alone do not establish improvement over the
-native prompt baseline. [Eval](../commands/eval.md) compares the resulting diff with effective intent.
-
-Implementation: [catalog selection and rendering](../../core/ringframe/deltas.py).
+One caveat, stated plainly: a prompt that compiled cleanly is not evidence it is
+a better prompt. That question belongs to [Eval](../commands/eval.md), which
+compares the resulting diff with what you asked for.

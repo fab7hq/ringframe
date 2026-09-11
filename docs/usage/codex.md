@@ -1,22 +1,22 @@
 # RingFrame in Codex
 
-## Prerequisites
+## Before you start
 
-- Install the [RingFrame CLI](../../README.md#installation).
+- Install the [RingFrame CLI](../../README.md#install).
 - Install and sign in to [Codex](https://developers.openai.com/codex/cli/).
-- Make `ringframe` available on the PATH used by Codex.
-- Enable native sub-agent tools for Eval and allow the plugin's file and shell
-  operations within your usual Codex permissions.
+- Make sure `ringframe` is on the PATH that Codex uses.
+- Turn on native sub-agent tools — Eval needs them — and allow the plugin to
+  read and write files and run `ringframe`.
 
-Ask and Seal use Codex's native `request_user_input` chooser. Use a mode that
-exposes this tool. If your Codex exposes the `default_mode_request_user_input`
-feature, you can enable confirmation in Default mode with:
+Ask and Seal need Codex's `request_user_input` chooser to ask you anything, so
+use a mode that offers it. If your Codex has the feature flag, you can turn it
+on in Default mode:
 
 ```sh
 codex features enable default_mode_request_user_input
 ```
 
-RingFrame does not change these host settings for you.
+RingFrame will not change your Codex settings for you.
 
 ## Install the plugin
 
@@ -25,17 +25,17 @@ codex plugin marketplace add fab7hq/fab7
 codex plugin add rf@fab7
 ```
 
-Start a new Codex session in your project directory. Open `/hooks`, review the
-`rf@fab7` prompt hook, and trust it. Plugin installation and hook trust are
-separate steps; see the [official Codex reference](https://learn.chatgpt.com/docs/llms-full.txt)
-for plugin and hook configuration.
+Start a new session in your project, then open `/hooks`, look at the `rf@fab7`
+prompt hook, and trust it. **Installing the plugin and trusting its hook are two
+separate steps** — the hook is what records that you submitted a prompt, so
+without it you lose that evidence.
 
-RingFrame creates project records on first use, including when the project is
-nested in another Git repository.
+RingFrame sets a project up the first time you use it, including when it sits
+inside a bigger Git repository.
 
-## Ask, work, evaluate, seal
+## Using it
 
-Enter these in Codex as you work:
+Type these as you work:
 
 ```text
 $rf:ask add a health endpoint with tests
@@ -43,45 +43,48 @@ $rf:eval use native sub-agents
 $rf:seal accepted
 ```
 
-Ask proposes a route and displays the complete prompt for confirmation. You
-can proceed, revise it, choose direct execution, or cancel. For Plan, Goal, or
-Review, it provides the saved prompt for you to submit through `/plan`, `/goal`,
-or `/review`. Direct execution continues in the same turn. You do not need to
-name a route in your intent.
+**Ask** picks a route, then shows you the whole prompt. You can go ahead, change
+it, run it directly instead, or cancel.
 
-Continue ordinary conversation to implement or revise the work. When invoking
-Eval in Codex, explicitly ask it to use sub-agents, as shown above, to authorize
-spawning the reviewers. Include this instruction even when native sub-agent
-tools are enabled; do not rely on `$rf:eval` alone to request delegation.
+On Codex you submit the prompt yourself: Ask gives you the saved prompt for
+`/plan`, `/goal`, or `/review`. Direct execution just carries on in the same
+turn. You never have to name a route — say what you want.
 
-The four sub-agents are an intent judge, then coverage, drift, and adversary
-assessors. Eval reports omissions, unexplained changes, and confidence based
-on judge agreement. It compares the diff with effective intent; it does not run the project's tests.
+Then work normally.
 
-Seal asks you to confirm closing the open Asks. Use `accepted`, `rejected`,
-`deferred`, or `abandoned`, optionally followed by a note. You can Seal with or
-without an Eval; the receipt records your decision.
+**Eval** — say `use native sub-agents` every time, as above. That is what
+authorises Codex to spawn the reviewers, and it is needed even when sub-agent
+tools are already on. `$rf:eval` by itself is not enough.
 
-For command details, see [Ask](../commands/ask.md), [Eval](../commands/eval.md),
-and [Seal](../commands/seal.md).
+Four judges: one works out what was actually promised, three check coverage,
+drift, and what is being glossed over. You get what is missing, what changed
+that nobody asked for, and how much they agreed. It reads the diff; it does not
+run your tests.
 
-## Update
+**Seal** asks you to confirm, then closes the open Asks: `accepted`, `rejected`,
+`deferred`, or `abandoned`, with a note if you want one. You can Seal with or
+without an Eval.
 
-Run the [CLI installer](../../README.md#installation) again, then refresh the
-marketplace and install its latest plugin:
+Details: [Ask](../commands/ask.md), [Eval](../commands/eval.md),
+[Seal](../commands/seal.md).
+
+## Updating
+
+Run the [installer](../../README.md#install) again for the CLI, then:
 
 ```sh
 codex plugin marketplace upgrade fab7
 codex plugin add rf@fab7
 ```
 
-Start a new session and review `/hooks` again if the hook definition changed.
+Start a new session, and check `/hooks` again if the hook changed.
 
-## Configuration and records
+## Your rules and your records
 
-[Customize deltas](../architecture/delta.md) globally or per project. RingFrame uses
-the project directory reported by Codex; it does not move records when a
-session ends. From that same directory, inspect them with:
+[Change the rules](../architecture/delta.md) for yourself or for one project.
+
+RingFrame uses whatever project directory Codex reports, and never moves records
+afterwards. From that directory:
 
 ```sh
 ringframe ask list --json
@@ -89,7 +92,12 @@ ringframe eval list --json
 ringframe ledger verify --json
 ```
 
-If Ask or Seal cannot open confirmation, check that `request_user_input` is
-available in the current mode. If Eval reports shared-context review, check
-that native sub-agent tools are enabled and exposed in the session. If the CLI
-is missing, check `ringframe --version` in the shell that launches Codex.
+**If Ask or Seal cannot ask you anything**, `request_user_input` is not
+available in your current mode.
+
+**If Eval says it reviewed in shared context**, sub-agent tools were not
+available, so the judges saw each other's answers. The verdict still stands,
+but they were not independent.
+
+**If nothing works**, run `ringframe --version` in the same shell you launch
+Codex from — the plugin calls the CLI, and it has to be findable.

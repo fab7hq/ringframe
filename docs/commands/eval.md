@@ -1,119 +1,129 @@
 # Eval
 
-Eval judges the current work against every open Ask and records `verdict` and
-`confidence`. Invoke `/rf:eval` in Claude Code or `$rf:eval` in Codex.
-The skill instructs the host to ask no questions and run no project builds or
-tests. These instructions do not sandbox the host. For Codex,
-use the [explicit delegation request](eval.md#native-delegation)
-when requesting four native judges.
+**You asked for some things. Eval looks at what actually changed and asks
+several independent judges whether you got them.**
+
+`/rf:eval` in Claude Code, `$rf:eval` in Codex. On Codex, ask for sub-agents
+explicitly — see [asking for judges](#asking-for-judges).
 
 ```mermaid
 flowchart LR
-    O[Open facts brief] --> I[Intent judge]
-    I --> C[Coverage judge]
-    I --> D[Drift judge]
-    I --> A[Adversarial judge]
-    C --> V[Validate and aggregate]
+    O[The facts: open Asks, the diff] --> I[What was actually promised?]
+    I --> C[Did we get it?]
+    I --> D[What changed that nobody asked for?]
+    I --> A[What is being glossed over?]
+    C --> V[Check and tally]
     D --> V
     A --> V
-    V --> R[Record verdict and confidence]
+    V --> R[Verdict and agreement]
 ```
 
-Eval compares the resulting diff with the effective confirmed intent to find
-omissions and unexplained changes. It does not audit the implementation
-sequence, such as whether the agent followed TDD. Evaluating a delta’s effect
-on that behavior belongs in a separate experiment.
+Eval compares **the diff against what you confirmed**. It finds things you asked
+for that are missing, and things that changed that no Ask explains.
 
-## Basis and subject
+It does not watch *how* the work was done. Whether your agent wrote the test
+first is not something Eval can see.
 
-An Ask is open from `ask.compiled` until cancellation or a Seal names it.
-The brief lists open Asks in compilation order. Judges treat unconfirmed
-candidates as context and reconstruct obligations from confirmed Asks, including
-later revisions and withdrawals. Ordinary prompt text is not retained; counts
-come from available hook captures and can explain otherwise unexplained changes.
+The skill tells your agent to ask you nothing and to run no builds or tests
+during an Eval. That is an instruction, not a sandbox.
 
-Eval requires Git. Anchor selection uses an explicit `--anchor` first, then
-the latest Seal's subject if it is a Git commit, then the first available base
-commit among the open Asks. Otherwise it returns `eval.anchor_unknown` (exit 3).
-A Seal of a dirty worktree does not itself supply a commit anchor.
+## What it judges against
 
-The default subject is `HEAD` for a clean tree, otherwise the worktree:
+An Ask is **open** from the moment it compiles until you cancel it or a Seal
+closes it. Eval takes every open Ask, in order.
 
-| Kind | Reference | Digest |
-| --- | --- | --- |
-| `git_commit` | Commit ID | Git tree hash at the repository root; SHA-256 of the project subtree listing for a nested project |
-| `worktree` | Absolute root | SHA-256 over sorted file paths, modes, and content digests, including untracked non-ignored files |
+Unconfirmed prompts count as context, not obligations. Confirmed ones are the
+obligations — including later revisions that changed them and withdrawals that
+dropped them.
 
-## Judgement and aggregation
+Your ordinary chat is never stored. But hooks do count how many plain prompts
+went by, which is often what explains a change no Ask asked for.
 
-`eval open` writes a brief with Ask paths, anchor, subject digest, changed-file
-counts, earlier Evals sharing an Ask, and limitations. An existing unclosed
-Eval over the same Asks returns `eval.already_open`; continue with that ID.
+**Eval needs Git.** It has to diff something against something.
 
-The skill requests one intent judge to produce `active`, `revised`, or
-`withdrawn` items traced to Asks. Three assessors (`coverage`, `drift`, `adversary`) each vote
-`yes`, `no`, or `unknown` on active items and classify every changed path as
-`required`, `consequence`, or `unexplained`. Judges are instructed to write only
-their staged output files. Both skills allow four sequential passes marked
-`shared_context` only when the native agent tool is absent or explicitly
-reports unavailability; the reason must be disclosed. A pending result or
-file permission denial does not justify that fallback.
+The starting point is, in order: `--anchor` if you gave one, the last Seal's
+commit, then the earliest base commit among the open Asks. If none of those
+exist it stops and asks. The end point is `HEAD` when your tree is clean,
+otherwise the working tree as it stands:
 
-`eval close` requires at least three judgement files bound to the brief digest,
-votes covering active items, and classifications covering changed paths. The
-CLI records reported judge identity and independence; it does not authenticate
-judges or prove that their contexts were separate.
-
-| Verdict | Aggregation rule |
+| Subject | What is recorded |
 | --- | --- |
-| `aligned` | All active items resolve to `yes`, with no unexplained path. |
-| `drifted` | With active items, an item resolves to `no`, or a path resolves to `unexplained`. |
-| `incomplete` | No active items, unresolved item votes without a drift finding, or a subject that changed during Eval. |
+| `git_commit` | The commit, and the tree hash — for a nested project, just that project's subtree |
+| `worktree` | The path, and a digest over every file's path, mode, and contents, untracked files included |
 
-The output field `majority` uses the most frequent vote, even with more than
-three judges. Item ties resolve to `unknown`; path ties resolve to `unexplained`.
-Confidence is the lowest agreement among deciding questions, not a probability
-of correctness. These are all active items and paths with a non-`required`
-result or judge disagreement. With none, confidence is `0.0`. No active items
-always yields `incomplete`; a changed subject also overrides the verdict to
-`incomplete`.
+## The judges
 
-## Native delegation
+`eval open` writes a brief: which Asks are open, the start and end points, how
+many files changed, any earlier Eval covering the same Asks, and the known
+limitations. If an Eval is already open over those same Asks, you continue with
+that one rather than starting a second.
 
-The coordinator is the host agent executing the Eval skill. The skill asks it
-to spawn one intent judge, then three assessors together, collect their files,
-and submit them to `eval close`. The RingFrame CLI does not spawn agents.
+Then four judges, and they have different jobs:
 
-| Host | Skill instructions |
+1. **Intent** — reads the Asks and writes down what was actually promised, marking
+   each item `active`, `revised`, or `withdrawn`, traced back to its Ask.
+2. **Coverage** — did we get each active item?
+3. **Drift** — what changed that nobody asked for?
+4. **Adversary** — what is being glossed over?
+
+The last three each vote `yes`, `no`, or `unknown` per item, and label every
+changed file `required`, `consequence`, or `unexplained`.
+
+They are meant to run as separate agents that cannot see each other's answers.
+If your host genuinely has no sub-agent tool, the skills allow four passes in
+one context instead — but that gets marked `shared_context` and the reason has
+to be stated. A slow tool or a permission prompt is not a reason to fall back.
+
+`eval close` needs at least three judgement files tied to that exact brief,
+votes on every active item, and a label on every changed file. The CLI records
+what the judges said about their own identity and independence. It cannot
+*verify* they were independent.
+
+## Reading the verdict
+
+| Verdict | When |
 | --- | --- |
-| [Claude Code](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/claude/skills/eval/SKILL.md) | Use foreground `Agent` calls, `Read` for evidence, and `Write` for judge files. |
-| [Codex](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/codex/skills/eval/SKILL.md) | Request fresh native agent contexts (`fork_turns: "none"` when exposed). Read evidence with a native file tool or one plain `cat` call; collect completed command and agent results. |
+| `aligned` | Every active item got a yes, and no file is unexplained. |
+| `drifted` | An item got a no, or a file came back unexplained. |
+| `incomplete` | No active items, votes left unresolved, or the code changed while Eval was running. |
 
-Both skills share the intent and judgement schemas, all-item/all-path coverage,
-fallback conditions, validation-error recovery, and reporting instructions.
-These are instructions, not evidence that a host followed them.
+**Confidence is agreement, not correctness.** It is the lowest agreement among
+the questions that were actually in doubt. Three judges who all agree and are
+all wrong produce high confidence. Read it as "how much did they disagree",
+nothing more.
 
-In Codex, explicitly request sub-agents when invoking Eval to authorize spawning
-the reviewers. Include this instruction even when native sub-agent tools are
-enabled; do not rely on `$rf:eval` alone to request delegation:
+Ties go the cautious way: an item ties to `unknown`, a file ties to
+`unexplained`. If nothing was in doubt, confidence is `0.0`. No active items
+always gives `incomplete`, and so does code changing underneath the Eval.
+
+## Asking for judges
+
+Your host agent runs the Eval skill and spawns the judges. **The RingFrame CLI
+never spawns anything.**
+
+| Host | How the skill asks |
+| --- | --- |
+| [Claude Code](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/claude/skills/eval/SKILL.md) | Foreground `Agent` calls; `Read` for evidence, `Write` for the judge files |
+| [Codex](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/codex/skills/eval/SKILL.md) | Fresh native agent contexts (`fork_turns: "none"` where available) |
+
+On Codex, say so when you invoke it — every time, even with sub-agent tools
+already on:
 
 ```text
 $rf:eval use native sub-agents
 ```
 
-This wording cannot grant a missing tool or guarantee spawning. The host owns
-permissions and delegation availability. A pending command or unread tool
-result is not evidence that delegation is unavailable.
+Those words cannot create a tool that is not there, or force your host to spawn
+anything. Your host owns that.
 
-## Records and CLI
+## What is recorded
 
-Each `evals/<eval_id>/` holds `brief.json`, `intent.json`, `judgement-<n>.json`,
-and `record.json`. The record includes votes, omission and commission findings,
-limitations, and a delta from the latest completed Eval sharing an Ask.
-The delta matches items by ID within the same Ask, then normalized text, then
-token overlap within the same Ask. This is a heuristic comparison, not proof
-that reworded obligations mean the same thing.
-The ledger records `eval.opened` and `eval.completed`.
+`evals/<eval_id>/` holds the brief, the intent, each judgement, and the final
+record — votes, what was missing, what was unexplained, the limitations, and
+what changed since the last Eval of the same Asks.
+
+That comparison matches items by ID first, then by wording, then by overlap.
+It is a best effort at "is this the same obligation, reworded", not a proof.
 
 ```sh
 ringframe eval open --json
@@ -122,6 +132,5 @@ ringframe eval close --eval <eval_id> --intent @intent.json \
 ringframe eval list --json
 ```
 
-Eval never blocks [Seal](seal.md).
-
-Implementation: [brief, validation, and aggregation](../../core/ringframe/evaluate.py).
+**Eval never blocks [Seal](seal.md).** A bad verdict is information for your
+decision, not a gate on it.

@@ -1,52 +1,60 @@
 # RingFrame
 
-RingFrame connects what you ask an AI coding agent to do with a review of its
-work and your decision to accept it. It runs inside Claude Code and Codex.
+**You ask an AI agent for something. RingFrame writes down what you asked,
+checks what came back, and records what you decided.**
 
-| Command | Purpose |
+Runs inside Claude Code and Codex.
+
+| Command | What it does |
 | --- | --- |
-| [**Ask**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/ask.md) | Turn your intent into a prompt you review and confirm. |
-| [**Eval**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/eval.md) | Review the work against open Asks with independent model judges. |
-| [**Seal**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/seal.md) | Close those Asks with your decision and a local receipt. |
+| [**Ask**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/ask.md) | Turns your intent into a prompt you read and confirm before it runs. |
+| [**Eval**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/eval.md) | Checks the work against everything still open, using independent judges. |
+| [**Seal**](https://github.com/fab7hq/ringframe/blob/main/docs/commands/seal.md) | Closes those Asks with your decision, and a receipt you can verify. |
 
-Continue working with your agent between commands. Run Eval when you want a
-review, and Seal when you decide to close the work. Prompts, reviews, and
-receipts stay in your project's `.fab7/rf/`, ignored by Git by default.
-RingFrame requires the project to be a Git repository with at least one commit.
+Talk to your agent normally in between. Run Eval when you want a second
+opinion, Seal when you have made up your mind.
 
-## Installation
+Everything stays on your machine, in your project's `.fab7/rf/`, ignored by Git
+by default. Your project must be a Git repository with at least one commit —
+Eval needs something to diff.
 
-Requires [uv](https://docs.astral.sh/uv/getting-started/installation/), Python
-3.11+, Git, and a POSIX shell on macOS or Linux.
+## Install
+
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/),
+Python 3.11+, Git, and macOS or Linux.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/fab7hq/ringframe/main/install.sh | sh
 ```
 
-This installs the latest CLI and downloads your configuration — harness
-profiles and rules — from the [Fab7 marketplace](https://github.com/fab7hq/fab7)
-into `~/.fab7/rf/config/`. Run `ringframe sync` to update it later. Then install
-the plugin for your harness from that marketplace using its guide below.
+That installs the CLI and downloads your rules from the
+[Fab7 marketplace](https://github.com/fab7hq/fab7) into `~/.fab7/rf/config/`.
+Later, `ringframe sync` updates them.
 
-Personal rule changes belong in `~/.fab7/rf/overrides/` and project ones in
-`<project>/.fab7/rf/deltas/`; neither is touched by a sync.
+Then install the plugin for your agent — see the guides below.
 
-The published PyPI release predates this configuration layout and cannot read
-it, so the installer takes the CLI from `main` until a newer release exists.
-To build and install a local checkout, run `./install.sh --source` from it.
+> The published PyPI release predates this setup and cannot read it, so the
+> installer takes the CLI from `main` for now. Building from a checkout:
+> `./install.sh --source`.
 
-## Use with your harness
-
-Each guide covers prerequisites, plugin installation, first use, and updates.
+## Set up your agent
 
 - [Claude Code](https://github.com/fab7hq/ringframe/blob/main/docs/usage/claude.md)
 - [Codex](https://github.com/fab7hq/ringframe/blob/main/docs/usage/codex.md)
 
-## Customization
+## Change the rules
 
-Deltas tailor the rules Ask uses to compose your prompt. Set personal defaults
-or override them for a project. See [delta configuration](https://github.com/fab7hq/ringframe/blob/main/docs/architecture/delta.md)
-for examples.
+Ask attaches your standing rules to every prompt — things like *write the
+failing test first*. You can change them for yourself, or for one project.
 
-[Product reference](https://github.com/fab7hq/ringframe/blob/main/docs/product.md) · [Contributing](https://github.com/fab7hq/ringframe/blob/main/AGENTS.md) ·
-[Security](https://github.com/fab7hq/ringframe/blob/main/SECURITY.md) · [Apache 2.0](https://github.com/fab7hq/ringframe/blob/main/LICENSE)
+Yours go in `~/.fab7/rf/overrides/`, a project's in
+`<project>/.fab7/rf/deltas/`. A sync never touches either.
+
+See [Rules](https://github.com/fab7hq/ringframe/blob/main/docs/architecture/delta.md).
+
+---
+
+[What RingFrame is](https://github.com/fab7hq/ringframe/blob/main/docs/product.md) ·
+[Contributing](https://github.com/fab7hq/ringframe/blob/main/AGENTS.md) ·
+[Security](https://github.com/fab7hq/ringframe/blob/main/SECURITY.md) ·
+[Apache 2.0](https://github.com/fab7hq/ringframe/blob/main/LICENSE)

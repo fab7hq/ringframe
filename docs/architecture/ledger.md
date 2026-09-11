@@ -1,90 +1,98 @@
-# Workspace ledger
+# Records
 
-The CLI stores records under `.fab7/rf/` in the consumer workspace. The root is
-`--workspace` when supplied, otherwise the current directory. Hooks use their
-payload's `cwd` unless `--workspace` is supplied. A nested project keeps its own
-ledger; the enclosing Git repository does not determine its location. Use
-`--workspace /path/to/project` when running commands from another directory.
-Eval scopes Git changes and subject digests to this project.
+Everything RingFrame writes for a project lives in that project's `.fab7/rf/`.
+Nothing is sent anywhere.
 
-`ringframe init` creates project records in `.fab7/rf/` and empty delta
-catalogs in `.fab7/rf/deltas/`. `ringframe init --global` creates populated
-catalogs in `~/.fab7/rf/deltas/`, preserving existing edits. Profiles remain
-package-owned. Global storage does not collect project events. Existing ledgers
-are never automatically moved or merged.
+The project is the directory you run in, or `--workspace <path>` if you pass
+it. Hooks use the directory the host reports. A project nested inside a bigger
+repository keeps its own records — RingFrame does not walk up to the enclosing
+repo. Eval only looks at changes inside the project it was run in.
 
-Initialization makes the project `.fab7/rf/` directory self-ignoring and owner-only.
+`ringframe init` sets up a project. It creates `.fab7/rf/`, makes it
+owner-only, and makes it ignore itself so your records never land in a commit.
+It also creates one empty rules file you can fill in later.
 
-## Files
+`ringframe init --global` is a different thing: it sets up your machine, not a
+project. See [Rules](delta.md) for what it installs and where.
 
-Paths below are relative to `.fab7/rf/`.
+Records already on disk are never moved, merged, or rewritten by an upgrade.
 
-| Path | Contents |
+## What is in the folder
+
+Paths are relative to `.fab7/rf/`.
+
+| Path | What it holds |
 | --- | --- |
-| `deltas/` | Project overrides merged over global catalogs in `~/.fab7/rf/deltas/` |
-| `ledger.jsonl` | Append-only canonical JSON events |
-| `lock` | Advisory lock around the final append |
-| `asks/<ask_id>/source.txt` | Published source intent for one candidate |
-| `asks/<ask_id>/prompt.txt` | Published prompt for one candidate |
-| `evals/<eval_id>/brief.json` | Open Asks and Git facts |
-| `evals/<eval_id>/intent.json` | Judged intent items |
-| `evals/<eval_id>/judgement-<n>.json` | Assessor votes and path classifications |
-| `evals/<eval_id>/record.json` | Aggregated Eval |
-| `seals/<seal_id>.json` | Decision receipt |
-| `authorizations/<actor_id>.json` | Optional local authorization grant |
-| `sessions/<host>/<session>/` | Prunable hook captures |
-| `tmp/` | Staging files; may remain after interruption |
+| `ledger.jsonl` | The log. One line per event, append-only |
+| `asks/<id>/source.txt` | Your words, exactly as you typed them |
+| `asks/<id>/prompt.txt` | The prompt that was built from them |
+| `evals/<id>/brief.json` | The facts a judge was given |
+| `evals/<id>/intent.json` | What the work was judged against |
+| `evals/<id>/judgement-<n>.json` | One judge's votes |
+| `evals/<id>/record.json` | The verdict, with agreement |
+| `seals/<id>.json` | Your decision, as a receipt |
+| `deltas/` | Rules you set for this project ([Rules](delta.md)) |
+| `authorizations/<actor>.json` | Optional: who may act on your behalf |
+| `sessions/<host>/<id>/` | What the host's hooks captured. Safe to prune |
+| `lock`, `tmp/` | Working files. `tmp/` may survive an interrupted run |
 
-## Writes and checks
+## How a record is written
 
 ```mermaid
 sequenceDiagram
     participant CLI
-    participant Files as Artifact files
-    participant Ledger
-    CLI->>Files: Write temporary artifact and fsync
-    CLI->>Files: Rename to final path and fsync directory
-    CLI->>Ledger: Acquire workspace lock
-    CLI->>Ledger: Check tail, append event, and fsync
-    CLI->>Ledger: Release lock
+    participant Files as Files
+    participant Log as ledger.jsonl
+    CLI->>Files: write the artifact, flush to disk
+    CLI->>Files: move it into place, flush the directory
+    CLI->>Log: take the lock
+    CLI->>Log: check the last line, append, flush
+    CLI->>Log: release the lock
 ```
 
-Publication and append are separate operations, not one transaction. A crash
-can leave unreferenced artifacts. Final artifacts are not intentionally
-rewritten; corrections use new records. Digests check consistency against the
-ledger, not authenticity against a malicious local writer.
+The file and the log line are two steps, not one. So a crash in between can
+leave a file nothing points at — harmless, and `verify` will tell you. Finished
+files are never edited afterwards; a correction is a new record, so the history
+stays honest.
+
+One limit worth stating plainly: digests prove a file has not changed *by
+accident*. They do not prove nobody with write access to your disk changed it
+on purpose.
+
+## Checking and tidying
 
 ```sh
 ringframe ledger verify --json
 ringframe sessions prune --older-than 7d --json
 ```
 
-Verification reports torn tails, invalid JSON or schema identifiers, missing or
-changed artifacts, unreferenced artifacts, dangling links, duplicate deliveries,
-and delivery without confirmation. It repairs nothing and returns exit 2 for
-findings. Full event validation runs in command writers via
-[`schema.py`](../../core/ringframe/schema.py); verification is not a full schema audit.
-Pruning removes old session captures, not Ask, Eval, or Seal artifacts, and can
-reduce later source-verification evidence and ordinary-prompt counts.
+`verify` looks for a truncated last line, bad JSON, missing or altered files,
+files nothing references, broken links, a delivery recorded twice, and a
+delivery with no confirmation before it. It reports and repairs nothing, and
+exits `2` if it finds anything. It is a consistency check, not a full audit —
+every command validates its own events as it writes them.
 
-## Events
+`prune` deletes old session captures only. Asks, Evals, and Seals are never
+touched. The trade-off: pruning can remove the evidence that would later prove
+a prompt was submitted word for word.
 
-Each `ringframe.ledger/1` line has `schema`, `event_id`, `type`, `time`, `id`,
-`actor`, `links`, and `data`. Artifact references carry a relative path, role,
-byte count, and SHA-256.
+## The log itself
 
-| Operation | Events |
+Every line carries `schema`, `event_id`, `type`, `time`, `id`, `actor`,
+`links`, and `data`. A reference to a file records its path, role, size, and
+SHA-256.
+
+| Command | Events it writes |
 | --- | --- |
 | Ask | `ask.compiled`, `ask.confirmed`, `ask.cancelled`, `ask.delivery`, `ask.submission` |
 | Eval | `eval.opened`, `eval.completed` |
 | Seal | `seal.created`, `seal.refused` |
 
-Opaque IDs use `ask_`, `evt_`, `evl_`, or `sel_` followed by 26 Crockford Base32
-characters. Use links and record fields for relationships, not ID parsing.
+IDs look like `ask_`, `evt_`, `evl_`, or `sel_` followed by 26 characters. They
+are opaque: read the `links` and the record fields to find relationships, never
+the ID text.
 
-CLI exit codes: `0` success, `1` usage error, `2` refusal or failed check,
-`3` needs input, `4` internal error. See [Security](../../SECURITY.md) for retained data.
+Exit codes: `0` fine, `1` you typed something wrong, `2` refused or a check
+failed, `3` it needs an answer from you, `4` a bug.
 
-Implementation: [publication and verification](../../core/ringframe/store.py),
-[workspace initialization](../../core/ringframe/workspace.py), and
-[session captures](../../core/ringframe/sessions.py).
+What is kept and what is not: [SECURITY.md](../../SECURITY.md).

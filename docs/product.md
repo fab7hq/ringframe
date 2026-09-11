@@ -1,78 +1,83 @@
-# Product contract
+# What RingFrame is
 
-RingFrame connects explicit intent, evaluation, and decisions inside a native
-AI coding host. It provides a Python CLI and separate Claude Code
-and Codex plugins, each named `rf`.
+You already tell a coding agent what to do. RingFrame writes down what you
+asked, checks what came back, and records what you decided about it.
 
-| Operation | Durable result |
-| --- | --- |
-| [Ask](commands/ask.md) | Source intent, compiled prompt, confirmation, and delivery observations |
-| [Eval](commands/eval.md) | Judgement of a Git subject against all open Asks, with confidence |
-| [Seal](commands/seal.md) | Decision closing the open Asks, with an optional Eval reference |
+Three commands, inside Claude Code or Codex:
+
+| Command | What it does | What it leaves behind |
+| --- | --- | --- |
+| [**Ask**](commands/ask.md) | Turns your intent into a prompt you read and confirm before it runs | Your words, the prompt, your confirmation |
+| [**Eval**](commands/eval.md) | Checks the work against every Ask still open | A verdict, and how much the judges agreed |
+| [**Seal**](commands/seal.md) | Closes those Asks with your decision | A receipt you can verify later |
 
 ```mermaid
 flowchart LR
-    A[Ask] --> C[Confirm prompt]
-    C --> H[Native work or prompt handoff]
+    A[Ask] --> C[Confirm the prompt]
+    C --> H[The agent works]
     H --> E[Eval]
-    E -->|Continue work| H
-    E --> S[Seal decision]
-    H -->|Decide without Eval| S
+    E -->|more to do| H
+    E --> S[Seal]
+    H -->|decide without Eval| S
 ```
 
-This is a typical use, not a required workflow. Ordinary conversation can
-continue between commands. Eval requires open Asks; Seal can close them without
-an Eval. Compiled, unconfirmed candidates remain visible as context until
-cancelled or sealed.
+That is the usual path, not a required one. Talk to your agent normally in
+between. Eval needs at least one open Ask; Seal can close Asks without one. A
+prompt you compiled but never confirmed stays visible until you cancel or seal
+it.
 
-## Ownership
+## Who does what
 
-| RingFrame | Native host |
+RingFrame does not drive your agent. It writes things down and gets out of the
+way.
+
+| RingFrame | Your agent |
 | --- | --- |
-| Preserve staged intent and prompt bytes | Discover project context |
-| Select directives and record a capability route | Choose tools, workflow, and execution sequence |
-| Record confirmation and delivery evidence | Manage conversation, permissions, and approvals |
-| Bind judgements to a recorded subject | Perform the requested work |
-| Record an attributable decision | Execute separately authorized external effects |
+| Keeps your exact words and the exact prompt | Explores the project |
+| Picks which standing rules apply | Picks its own tools and order of work |
+| Records that you confirmed, and what was delivered | Runs the conversation, asks for permissions |
+| Ties a verdict to a specific commit | Does the actual work |
+| Records your decision, with your name on it | Anything with outside effects you approved |
 
-The CLI validates records and aggregates submitted judgements. Skills guide
-routing, confirmation, and judging; their instructions do not enforce host
-behavior. The host is configured to load these skills only on explicit
-invocation, but the CLI remains callable independently.
+The CLI checks records and adds up judgements. The skills tell your agent how
+to route, confirm, and judge — they are instructions, not enforcement. Your
+agent runs them only when you type `/rf:ask`, `/rf:eval`, or `/rf:seal`; it
+will not start one on its own.
 
-Claude skills set
-[`disable-model-invocation: true`](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill).
-Codex skills set
-[`policy.allow_implicit_invocation: false`](https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/skill-creator/SKILL.md)
-in `agents/openai.yaml`.
+That restraint is set in the skill files:
+Claude uses [`disable-model-invocation: true`](https://code.claude.com/docs/en/skills#control-who-invokes-a-skill),
+Codex uses [`policy.allow_implicit_invocation: false`](https://github.com/openai/codex/blob/main/codex-rs/skills/src/assets/samples/skill-creator/SKILL.md).
 
-## Boundaries
+## What it will not tell you
 
-- Records live in the consumer workspace's `.fab7/rf/`, ignored by Git by
-  default. See [Ledger](architecture/ledger.md) for layout and retention.
-- RingFrame does not maintain reusable project memory, impose development
-  phases, retry the host, merge, publish, or deploy.
-- Delivery evidence describes activation or submission, not completion.
-- Eval compares the resulting diff with effective intent; it does not audit
-  the implementation process. Confidence measures judge agreement, not
-  probability of correctness.
-- Seal records a caller's decision. Downstream systems choose their own gates.
+Being honest about the limits is the point of the tool, so:
 
-The command references describe CLI semantics and the host integration paths.
-They are not host qualification reports. Deterministic tests check CLI
-mechanisms; prompt quality, judge reliability, and improvement over native work
-require separate empirical evidence.
+- **Delivered is not done.** A delivery record says the prompt reached your
+  agent. It says nothing about whether the work is finished or correct.
+- **Eval reads the diff, not the process.** It compares what changed against
+  what you asked for. It does not watch how your agent got there.
+- **Confidence means agreement, not truth.** It measures how much the judges
+  agreed with each other. Judges can agree and still be wrong.
+- **A Seal is your decision, not a quality gate.** Anything downstream decides
+  for itself what to do with it.
+- **Nothing here is proof the prompt was better.** Tests cover the mechanics.
+  Whether a compiled prompt beats what you would have typed is a separate
+  question, not one this product answers.
 
-## References
+Records live in your project's `.fab7/rf/`, ignored by Git by default. See
+[Records](architecture/ledger.md). RingFrame keeps no memory between projects,
+imposes no phases, and never merges, publishes, or deploys.
 
-Start with the [README](../README.md) for installation and first use.
-[Claude Code](usage/claude.md) and [Codex](usage/codex.md) cover provider setup;
-[delta configuration](architecture/delta.md) covers personal and project rules.
-[Ask](commands/ask.md), [Eval](commands/eval.md), and [Seal](commands/seal.md)
-describe the commands. [Ledger](architecture/ledger.md) covers local records;
-[Compiler](architecture/compiler.md) covers prompt rules and provenance.
+## Where to go next
 
-Contributors follow [AGENTS.md](../AGENTS.md) and
-[LLM_VERIFICATION.md](../LLM_VERIFICATION.md) for model tests. Data handling is
-covered by [SECURITY.md](../SECURITY.md). Research, release planning, and
-qualification records are maintained outside this repository.
+Installing and first use: the [README](../README.md).
+Setting up your agent: [Claude Code](usage/claude.md), [Codex](usage/codex.md).
+Changing the rules it uses: [Rules](architecture/delta.md).
+The commands in detail: [Ask](commands/ask.md), [Eval](commands/eval.md),
+[Seal](commands/seal.md).
+How a prompt gets built: [Prompts](architecture/compiler.md).
+What is stored on disk: [Records](architecture/ledger.md).
+
+Contributing: [AGENTS.md](../AGENTS.md) and, for model tests,
+[LLM_VERIFICATION.md](../LLM_VERIFICATION.md). Data handling:
+[SECURITY.md](../SECURITY.md).

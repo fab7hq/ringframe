@@ -1,122 +1,118 @@
 # Ask
 
-Ask turns an explicit intent into a prompt for a native host capability. The
-skill proposes the route and wording; the CLI validates and stores the
-candidate before the user confirms it.
+**You say what you want. Ask writes the prompt, shows it to you, and only sends
+it once you say yes.**
 
 | Claude Code | Codex |
 | --- | --- |
-| `/rf:ask <intent>` | `$rf:ask <intent>` |
+| `/rf:ask <what you want>` | `$rf:ask <what you want>` |
 
 ```mermaid
 flowchart TD
-    I[Explicit intent] --> R[Classify and select capability]
-    R --> P[Compose and persist candidate]
-    P --> C{User confirmation}
-    C -->|Revise or change route| N[Compile successor linked by revises]
+    I[What you want] --> R[Pick the route, pick the rules]
+    R --> P[Build the prompt and save it]
+    P --> C{You read it}
+    C -->|not quite| N[Build a new one, linked to the old]
     N --> C
-    C -->|Cancel| X[Record cancellation]
-    C -->|Proceed| A[Record confirmation]
-    A --> D[Activate capability, continue directly, or hand off]
-    D --> O[Record available delivery or submission evidence]
+    C -->|no| X[Record that you cancelled]
+    C -->|yes| A[Record that you confirmed]
+    A --> D[Switch on the mode, continue, or hand you the prompt]
+    D --> O[Record whatever delivery evidence exists]
 ```
 
-## Routing and compilation
+## Building the prompt
 
-Classify only the task, result, interaction, horizon, effects, and optional
-concerns needed for routing. Preserve the user's constraints without inventing
-project context, permissions, or acceptance requirements.
+Your agent works out a few things about your request: is it planning or
+implementing, does it write files, how long does it run, what is it about. Just
+enough to route it. It does not invent requirements or guess at project
+context, and it keeps your constraints as you stated them.
 
-The coordinator first reads `ringframe profile show --host <host> --json`.
-The profile supplies capability selection criteria and precedence, so routing
-follows the intended outcome and continuation without requiring command names.
-A continuing objective can select Goal before the general Plan default for
-work with effects. Explicit planning-only or review-only requests retain that
-scope. Codex also maps native code review; Claude uses direct execution for
-review because no separate review route is adopted in its profile.
+Then it reads the profile — the list of things your agent can do and when each
+fits — and picks a route. You never have to name a native command. A long
+running objective can route to Goal instead of the usual Plan. If you asked for
+a plan only, or a review only, that stays a plan or a review.
 
-`ringframe deltas list` exposes the merged concern vocabulary; `deltas render`
-returns the applicable directives. The CLI requires
-`route.explicit_direct_request=true` for direct execution with specified effects
-and refuses capabilities absent from the selected profile. It does not determine
-semantic suitability or prove that the current host exposes the declared tool.
+Two guards from the CLI: it refuses a route the profile does not list, and it
+refuses to run straight into writing files unless your request itself asked to
+skip planning. What it cannot tell you is whether the route was a *good* choice,
+or whether your host really exposes that tool right now.
 
-The [compiler](../architecture/compiler.md) selects directives. The skill
-composes a task brief with labelled `Rules:` lines, then stages `source.txt`
-and `composed.txt`. The CLI publishes `source.txt` and `prompt.txt`, records
-byte counts and SHA-256 digests, and appends `ask.compiled`.
+Then [the prompt gets built](../architecture/compiler.md), saved, and shown to
+you. Your exact words go to `source.txt`, the prompt to `prompt.txt`, both with
+their size and checksum recorded.
 
-Each compile creates a new `ask_id`, including revisions shown in the chooser.
-Revisions link to the previous Ask with `revises`; remediation can link to an
-Eval with `remediates`. Published candidates are never overwritten.
+Every compile makes a new Ask, revisions included. A revision links back to the
+one it replaces; a fix for a failed Eval can link to that Eval. Nothing already
+saved is ever overwritten.
 
-## Confirmation and delivery
+## Confirming, and what happens after
 
-The skill is instructed to present the complete stored prompt, route,
-continuation, and expected effects. Proceed records `ask.confirmed`; cancel records
-`ask.cancelled`. Confirmation is reported by the skill, not independently
-verified by the CLI. Unanswered candidates can remain compiled but unconfirmed.
+The skill shows you the whole prompt, the route, what happens next, and what it
+will touch. Yes records a confirmation; no records a cancellation. You can also
+just leave it — an unconfirmed prompt stays on the books until you deal with it.
 
-| Observation | Meaning |
+The confirmation is reported by the skill. The CLI writes down that it was
+reported; it cannot independently watch you click.
+
+After that, what gets recorded depends on what can actually be observed:
+
+| What you see | What it means |
 | --- | --- |
-| `native_accepted` | A hook receipt records native capability acceptance. |
-| `handoff_ready` | The prompt is available for the user to submit. |
-| `delivery_failed` / `unavailable` | Delivery failed or is unavailable. |
-| No delivery event | No recorded delivery outcome; includes direct continuation. |
-| Submission `observed` | A prompt hook matched the compiled input. |
-| Submission `attributed` | A caller attested submission with `ask submitted`. |
+| `native_accepted` | A hook saw your agent switch modes. This really happened. |
+| `handoff_ready` | The prompt is ready for you to paste. Nobody watched you paste it. |
+| `delivery_failed` / `unavailable` | It could not be delivered. |
+| no delivery event | Nothing was observed — including work that just continued in the same turn. |
+| submission `observed` | A hook caught the prompt going in, and the bytes matched. |
+| submission `attributed` | You told us it went in, with `ask submitted`. |
 
-Source verification requires a matching captured Ask in the resolved session;
-comparison tolerates one final newline. Missing or ambiguous captures leave
-`source_verified` as `unverified`. Submission matching also supports a dropped
-trailing newline or host-stripped capability prefix and records the match type.
-None of these observations proves execution, completion, or prompt quality.
+**None of these mean the work was done, or done well.** They are about delivery
+only.
 
-## Host integration
+For byte matching: a trailing newline difference is tolerated, as is a host
+stripping the `/plan ` prefix, and the match type is recorded. If the capture is
+missing or several sessions look alike, it stays `unverified` rather than
+guessing.
 
-Profiles are selected by recognized host name, independently of version.
-Stable IDs are `claude-code` and `codex`; an unrecognized host uses `unknown`
-with `human_handoff`. Profile digests identify the configuration; captured
-host versions are provenance. There is no model pin or host-version window.
-Profile selection does not establish tool availability or support for every
-past or future host build.
+## How each host behaves
 
-The following paths are requested by the shipped skills. Host permissions
-control tool execution.
+The profile is chosen by host name — `claude-code` or `codex` — not by version.
+An unknown host falls back to handing you the prompt. Host versions are recorded
+as provenance, nothing more. Knowing the profile does not prove the tool is
+available in your session right now.
+
+Your host's own permissions still control every tool call below.
 
 ### Claude Code
 
-The [Ask skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/claude/skills/ask/SKILL.md) presents the stored
-prompt through `AskUserQuestion`. After confirmation, `native_plan` calls
-`EnterPlanMode`; the PostToolUse hook records `native_accepted` from its receipt.
-The confirmed prompt stays in the current context. The host owns planning,
-plan review, and subsequent work. On activation error, the skill records failure
-and offers the stored prompt for manual handoff.
+The [Ask skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/claude/skills/ask/SKILL.md)
+shows you the prompt with `AskUserQuestion`. Say yes on the Plan route and it
+calls `EnterPlanMode`; a hook catches that and records `native_accepted`. The
+prompt stays in your current conversation, and Claude Code owns the planning and
+review from there. If switching modes fails, the skill records the failure and
+hands you the prompt instead.
 
-`native_direct` continues in the same turn and has no delivery receipt. The
-[profile](https://github.com/fab7hq/fab7/blob/main/products/ringframe/config/harnesses/claude-code.yaml) also declares a manual
-Goal route. The coordinator can propose it for a continuing objective and
-hand the stored prompt to the user.
+Direct execution just continues in the same turn, so there is nothing to
+receipt. The
+[profile](https://github.com/fab7hq/fab7/blob/main/products/ringframe/config/harnesses/claude-code.yaml)
+also has a Goal route you submit yourself.
 
 ### Codex
 
-The [Ask skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/codex/skills/ask/SKILL.md) requires
-`request_user_input` in the current turn. Missing or rejected confirmation
-stops it without confirming; no answer cancels the candidate. See
-[Codex setup](../usage/codex.md#prerequisites) for tool availability and prompt-hook trust.
+The [Ask skill](https://github.com/fab7hq/fab7/blob/main/products/ringframe/plugins/codex/skills/ask/SKILL.md)
+needs `request_user_input` in the turn. If it is missing or you decline, the Ask
+stops without confirming; no answer cancels it. See
+[Codex setup](../usage/codex.md#prerequisites).
 
-The [profile](https://github.com/fab7hq/fab7/blob/main/products/ringframe/config/harnesses/codex.yaml) uses manual handoff for
-Plan, Goal, and Review. The CLI adds `/plan `, `/goal `, or `/review `, with a 4,000-character Goal
-limit. After confirmation, the skill records `handoff_ready` and supplies the
-complete `prompt.txt` path for the user to submit. The prompt hook can then
-record a matching submission. `native_direct` continues in the same turn.
+On Codex you submit the prompt yourself. The
+[profile](https://github.com/fab7hq/fab7/blob/main/products/ringframe/config/harnesses/codex.yaml)
+hands off for Plan, Goal, and Review; the CLI adds the `/plan `, `/goal `, or
+`/review ` prefix, with a 4,000-character cap on Goal. You get the path to
+`prompt.txt`, and when you submit it the prompt hook can record the match.
 
-Both hosts capture explicit invocations through UserPromptSubmit hooks. Hook
-errors do not block the host; absent capture leaves source or submission
-unverified. Identical Ask text captured in multiple recent sessions makes
-automatic session lookup ambiguous.
+Both hosts capture your `/rf:ask` line through a hook. If a hook fails your
+session carries on as normal — you just lose that piece of evidence.
 
-## Inspect records
+## Looking at your Asks
 
 ```sh
 ringframe ask list --json
@@ -124,9 +120,6 @@ ringframe ask show --ask <ask_id> --json
 ringframe ask copy --ask <ask_id>
 ```
 
-`ask copy` prints the exact prompt. Without an ID, `ask show` resolves a unique
-record using session or workspace context; ambiguity returns `needs_input`
-(exit 3). Explicit references may use an ID or unique title substring. The CLI
-does not choose a record merely because it is newest.
-
-Implementation: [Ask records and resolution](../../core/ringframe/ask.py).
+`ask copy` prints the exact prompt, ready to paste. `ask show` without an ID
+finds the one you mean from context; if that is ambiguous it asks rather than
+guessing, and it will never pick a record just because it is the newest.

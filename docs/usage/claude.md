@@ -1,12 +1,12 @@
 # RingFrame in Claude Code
 
-## Prerequisites
+## Before you start
 
-- Install the [RingFrame CLI](../../README.md#installation).
+- Install the [RingFrame CLI](../../README.md#install).
 - Install and sign in to [Claude Code](https://code.claude.com/docs/en/setup).
-- Make `ringframe` available on the PATH used by Claude Code.
-- Allow the plugin's confirmation, file, shell, and native Agent tools within
-  your usual Claude Code permissions. Eval delegates to four native judges.
+- Make sure `ringframe` is on the PATH that Claude Code uses.
+- Allow the plugin the tools it needs: asking you questions, reading and writing
+  files, running `ringframe`, and spawning agents. Eval uses four of them.
 
 ## Install the plugin
 
@@ -15,18 +15,16 @@ claude plugin marketplace add fab7hq/fab7
 claude plugin install rf@fab7
 ```
 
-This installs for your user. To share the plugin setting with a project, run
-`claude plugin install rf@fab7 --scope project` from that project instead.
-See Claude's [plugin installation reference](https://code.claude.com/docs/en/plugins-reference#plugin-install)
-for installation scopes.
+That installs it for you, everywhere. To install it for one project instead,
+run `claude plugin install rf@fab7 --scope project` from that project. See
+Claude's [plugin reference](https://code.claude.com/docs/en/plugins-reference#plugin-install).
 
-Start a new Claude Code session in your project directory. RingFrame creates
-that project's records on first use, including when the project is nested in
-another Git repository.
+Start a new session in your project. RingFrame sets that project up the first
+time you use it — including when it sits inside a bigger Git repository.
 
-## Ask, work, evaluate, seal
+## Using it
 
-Enter these in Claude Code as you work:
+Type these as you work:
 
 ```text
 /rf:ask add a health endpoint with tests
@@ -34,42 +32,47 @@ Enter these in Claude Code as you work:
 /rf:seal accepted
 ```
 
-Ask proposes a route and displays the complete prompt for confirmation. You
-can proceed, revise it, choose direct execution, or cancel. After approval,
-Plan enters Claude's native Plan mode; direct execution continues in the same
-turn. For a continuing Goal, Ask provides the saved prompt for you to submit
-through the native command. You do not need to name a route in your intent.
+**Ask** picks a route, then shows you the whole prompt. You can go ahead,
+change it, run it directly instead, or cancel. Say yes and Plan mode opens with
+the prompt in it; direct execution just carries on in the same turn. For a
+long-running Goal, Ask hands you the saved prompt to submit yourself.
 
-Continue ordinary conversation to implement or revise the work. Eval reviews
-all open Asks with an intent judge and three assessors: coverage, drift, and
-adversary. It reports omissions, unexplained changes, and confidence based on
-judge agreement. Eval compares the diff with effective intent; it does not run the project's tests.
+You never have to name a route. Say what you want.
 
-Seal asks you to confirm closing the open Asks. Use `accepted`, `rejected`,
-`deferred`, or `abandoned`, optionally followed by a note. You can Seal with or
-without an Eval; the receipt records your decision.
+Then work normally — implement, revise, argue with your agent.
 
-For command details, see [Ask](../commands/ask.md), [Eval](../commands/eval.md),
-and [Seal](../commands/seal.md).
+**Eval** looks at everything still open and asks four judges: one works out
+what was actually promised, three check coverage, drift, and what is being
+glossed over. You get what is missing, what changed that nobody asked for, and
+how much they agreed.
 
-## Update
+It reads the diff. It does not run your tests.
 
-Run the [CLI installer](../../README.md#installation) again, then refresh the
-marketplace and plugin:
+**Seal** asks you to confirm, then closes the open Asks: `accepted`,
+`rejected`, `deferred`, or `abandoned`, with a note if you want one. You can
+Seal with or without an Eval.
+
+Details: [Ask](../commands/ask.md), [Eval](../commands/eval.md),
+[Seal](../commands/seal.md).
+
+## Updating
+
+Run the [installer](../../README.md#install) again for the CLI, then:
 
 ```sh
 claude plugin marketplace update fab7
 claude plugin update rf@fab7
 ```
 
-For a project-scoped installation, add `--scope project` to the plugin update.
-Restart Claude Code to load the updated plugin.
+Add `--scope project` if you installed it that way. Restart Claude Code to pick
+up the new plugin.
 
-## Configuration and records
+## Your rules and your records
 
-[Customize deltas](../architecture/delta.md) globally or per project. RingFrame uses
-the project directory reported by Claude Code; it does not move records when
-a session ends. From that same directory, inspect them with:
+[Change the rules](../architecture/delta.md) for yourself or for one project.
+
+RingFrame uses whatever project directory Claude Code reports, and never moves
+records afterwards. From that directory:
 
 ```sh
 ringframe ask list --json
@@ -77,6 +80,8 @@ ringframe eval list --json
 ringframe ledger verify --json
 ```
 
-If the commands are missing, check that the plugin is enabled in `/plugin` and
-start a new session. If the CLI is missing, check `ringframe --version` in the
-shell that launches Claude Code.
+**If `/rf:ask` does not appear**, check the plugin is enabled in `/plugin` and
+start a new session.
+
+**If it appears but fails**, run `ringframe --version` in the same shell you
+launch Claude Code from — the plugin calls the CLI, and it has to be findable.
