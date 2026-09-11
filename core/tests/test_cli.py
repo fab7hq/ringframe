@@ -423,3 +423,50 @@ def test_minimal_leaves_a_text_result_as_text(repo, monkeypatch):
     _, small, _ = run(repo, "deltas", "render", "--host", "claude-code", "--capability", "native_plan",
                       "--classification", CLS, "--minimal", monkeypatch=monkeypatch)
     assert small == plain and small.startswith("Rules:")
+
+
+def test_every_projection_emits_exactly_its_spec_keys(repo, monkeypatch, tmp_path):
+    """One pass through Ask, Eval and Seal under --minimal, asserting each command's key set.
+
+    These are the fields the skills read; anything else is provenance the ledger already holds."""
+    def m(*args, stdin=None):
+        code, out, _ = run(repo, *args, "--minimal", stdin=stdin, monkeypatch=monkeypatch)
+        assert code == 0, (args, out)
+        return out
+
+    assert set(m("deltas", "domains")["domains"][0]) == {"domain", "base", "description", "concerns", "project_opted_in"}
+
+    compiled = m("ask", "compile", "--staged", staged(repo, "k1"), "--title", "Login", "--capability", "native_plan",
+                 "--classification", CLS, "--route", ROUTE, "--host", host("k1"))
+    assert set(compiled) == {"ask_id", "prompt_path", "delivery_mode", "source_verified"}
+    a = compiled["ask_id"]
+    assert set(m("ask", "confirm", "--ask", a)) == {"ask_id", "confirmation"}
+    assert set(m("ask", "show", "--ask", a)) == {"ask_id", "title", "state", "capability", "prompt_path", "source_verified"}
+    assert set(m("ask", "list")["asks"][0]) == {"ask_id", "title", "state", "capability"}
+    assert set(m("ask", "submitted", "--ask", a)) <= {"ask_id", "state"}
+    assert set(m("ask", "delivery", "--ask", a, "--state", "unavailable", "--reason", "no tool")) <= {"ask_id", "mode", "state"}
+
+    cancelled = m("ask", "compile", "--staged", staged(repo, "k2"), "--title", "Later", "--capability", "native_plan",
+                  "--classification", CLS, "--route", ROUTE, "--host", host("k2"))["ask_id"]
+    assert set(m("ask", "cancel", "--ask", cancelled, "--reason", "not now")) <= {"ask_id", "state"}
+
+    commit(repo, {"api.py": "def uptime(): return 1\n"})
+    opened = m("eval", "open")
+    assert set(opened) == {"eval_id", "brief_path", "changes", "anchor", "subject"}
+    assert isinstance(opened["anchor"], str) and isinstance(opened["subject"], str)
+    # the brief digest is provenance, deliberately absent from the minimal view; read it from disk
+    import hashlib
+    sha_b = hashlib.sha256((repo / ".fab7/rf/evals" / opened["eval_id"] / "brief.json").read_bytes()).hexdigest()
+    items = [{"id": "i1", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
+    (tmp_path / "intent.json").write_text(json.dumps(intent(sha_b, items)))
+    files = []
+    for n, ang in enumerate(("coverage", "drift", "adversary")):
+        f = tmp_path / f"j{n}.json"; f.write_text(json.dumps(judgement(sha_b, ang, {"i1": "yes"}, {"api.py": "required"})))
+        files += ["--judgement", f"@{f}"]
+    closed = m("eval", "close", "--eval", opened["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files)
+    assert set(closed) == {"eval_id", "verdict", "confidence"}
+    assert set(m("eval", "list")["evals"][0]) <= {"eval_id", "verdict", "confidence", "state"}
+
+    sealed = m("seal", "create", "--disposition", "accepted")
+    assert set(sealed) == {"seal_id", "disposition"}
+    assert set(m("seal", "check", "--seal", sealed["seal_id"])) == {"seal_id", "fresh", "subject_matches"}
