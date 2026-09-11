@@ -314,3 +314,14 @@ def test_the_audit_still_rejects_a_line_that_is_neither_rule_nor_heading(repo, u
     supplied = deltas.render(ws, profiles.load("claude-code"), "native_plan", IMPL)["practice"]["entries"]
     with pytest.raises(config.ConfigError, match="not `- <labels>"):
         deltas.audit_composed("Do it.\n\nRules:\nthis is just prose\n", supplied)
+
+
+def test_the_audit_accepts_every_heading_the_cli_can_print(repo, user_home, tmp_path):
+    """Including the one-word `Throughout:`, which a shape heuristic misses."""
+    user_home(tmp_path / "headings")
+    ws = workspace.resolve(cwd=repo).ensure()
+    supplied = deltas.render(ws, profiles.load("claude-code"), "native_plan", RESEARCH_AND_IMPLEMENT)["practice"]["entries"]
+    for heading in [deltas.EVERY_PHASE, *deltas.PHASES.values()]:
+        composed = f"Do the thing.\n\nRules:\n{heading}\n- {supplied[0]['label']}: applied here.\n"
+        applied, _ = deltas.audit_composed(composed, supplied)
+        assert applied == [supplied[0]["id"]], heading

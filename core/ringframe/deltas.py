@@ -151,6 +151,7 @@ PHASES = {"question": "When answering:", "research": "While researching:", "clar
           "plan": "While planning:", "implement": "While implementing:", "diagnose": "While diagnosing:",
           "review": "While reviewing:", "operate": "While operating:", "document": "When documenting:"}
 EVERY_PHASE = "Throughout:"
+HEADINGS = frozenset({EVERY_PHASE, *PHASES.values()})
 
 
 def _phase_of(entry: dict, tasks: list[str]) -> str:
@@ -285,8 +286,8 @@ def audit_composed(text: str, supplied: list[dict]) -> tuple[list[str], list[str
         l = l.strip()
         if not l:
             continue
-        if not l.startswith("- ") and l.endswith(":") and " " in l:
-            continue  # a phase heading the CLI supplied, e.g. "While researching:"
+        if l in HEADINGS:
+            continue  # a phase heading the CLI printed; match the exact text, never its shape
         _check(l.startswith("- ") and ": " in l, f"rule line is not `- <labels>: <applied directive>`: {l[:60]!r}")
         labels = [x.strip() for x in l[2:].split(": ", 1)[0].replace(" and ", ",").split(",") if x.strip()]
         for lab in labels:
