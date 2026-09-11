@@ -248,3 +248,69 @@ def test_a_domain_can_be_added_through_personal_overrides(repo, user_home, tmp_p
     assert "practice.widget_first" in out["practice"]["selected"]
     block = next(d for d in out["practice"]["domains"] if d["domain"] == "fixture-domain")
     assert block["shipped_sha256"] is None  # nothing shipped it; it is the user's own
+
+
+# ---- phases: one Ask that spans several tasks -----------------------------------------------
+
+RESEARCH_AND_IMPLEMENT = {"task": ["research", "implement"], "result": "workspace_change",
+                          "interaction": "approval_gated", "horizon": "session", "effects": ["read", "write"]}
+
+
+def test_one_task_renders_a_flat_list(repo, user_home, tmp_path):
+    user_home(tmp_path / "flat")
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan", IMPL)
+    lines = out["practice"]["text"].splitlines()
+    assert lines[0] == "Rules:"
+    assert all(l.startswith("- ") for l in lines[1:] if l.strip())
+
+
+def test_several_tasks_group_the_rules_by_phase(repo, user_home, tmp_path):
+    user_home(tmp_path / "phases")
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan", RESEARCH_AND_IMPLEMENT)
+    text = out["practice"]["text"]
+    assert "While researching:" in text and "While implementing:" in text
+    # a rule that applies to every named task is stated once, not repeated per phase
+    assert text.count("- Occam") == 1
+    labels = [l for l in text.splitlines() if l.startswith("- ")]
+    assert len(labels) == len(set(labels))
+
+
+def test_the_core_cap_applies_per_phase_so_research_rules_survive(repo, user_home, tmp_path):
+    """Before grouping, implement's core rules outranked research's and pushed them out."""
+    user_home(tmp_path / "cap")
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan", RESEARCH_AND_IMPLEMENT)
+    p = out["practice"]
+    assert "practice.occam" in p["selected"], "a research rule must survive a research+implement Ask"
+    assert "practice.testing_pyramid" in p["selected"], "and so must an implement rule"
+    assert p["dropped_by_budget"] == []
+
+
+def test_phases_appear_in_the_order_the_classification_names_them(repo, user_home, tmp_path):
+    user_home(tmp_path / "order")
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan",
+                        {**RESEARCH_AND_IMPLEMENT, "task": ["implement", "research"]})
+    text = out["practice"]["text"]
+    assert text.index("While implementing:") < text.index("While researching:")
+
+
+def test_the_prompt_audit_accepts_phase_headings(repo, user_home, tmp_path):
+    user_home(tmp_path / "audit")
+    ws = workspace.resolve(cwd=repo).ensure()
+    out = deltas.render(ws, profiles.load("claude-code"), "native_plan", RESEARCH_AND_IMPLEMENT)
+    supplied = out["practice"]["entries"]
+    composed = ("Do the thing.\n\nRules:\n\nWhile researching:\n"
+                f"- {supplied[0]['label']}: applied to this task.\n")
+    applied, omitted = deltas.audit_composed(composed, supplied)
+    assert applied == [supplied[0]["id"]] and len(omitted) == len(supplied) - 1
+
+
+def test_the_audit_still_rejects_a_line_that_is_neither_rule_nor_heading(repo, user_home, tmp_path):
+    user_home(tmp_path / "audit2")
+    ws = workspace.resolve(cwd=repo).ensure()
+    supplied = deltas.render(ws, profiles.load("claude-code"), "native_plan", IMPL)["practice"]["entries"]
+    with pytest.raises(config.ConfigError, match="not `- <labels>"):
+        deltas.audit_composed("Do it.\n\nRules:\nthis is just prose\n", supplied)

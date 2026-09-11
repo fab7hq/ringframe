@@ -145,8 +145,23 @@ def selected_domains(classification: dict, ws=None) -> list[str]:
     return [DEFAULT_DOMAIN] + extra
 
 
+# How a phase reads in the rendered block. An Ask naming several tasks gets one group per
+# task, so a rule meant for research is not weighed against one meant for implementation.
+PHASES = {"question": "When answering:", "research": "While researching:", "clarify": "When clarifying:",
+          "plan": "While planning:", "implement": "While implementing:", "diagnose": "While diagnosing:",
+          "review": "While reviewing:", "operate": "While operating:", "document": "When documenting:"}
+EVERY_PHASE = "Throughout:"
+
+
+def _phase_of(entry: dict, tasks: list[str]) -> str:
+    """Which named task this rule belongs to, or every one of them."""
+    applies = set(entry.get("applies_to", {}).get("task") or tasks)
+    matched = [t for t in tasks if t in applies]
+    return EVERY_PHASE if len(matched) == len(tasks) else matched[0]
+
+
 def _practice(ws, domain: str, classification: dict, statuses, subagents: bool) -> dict:
-    """Select one catalog's rules under its own core cap."""
+    """Select one catalog's rules under its own core cap, per phase when the Ask names several tasks."""
     catalog = load_practice_catalog(domain, ws)
     merged = effective(ws, domain)
     concerns = list(classification.get("concerns", []))
@@ -166,12 +181,27 @@ def _practice(ws, domain: str, classification: dict, statuses, subagents: bool) 
     core.sort(key=lambda t: t[:2])
     situational.sort(key=lambda t: t[:2])
     cap = int(catalog["render"]["core_cap"])
-    # the cap governs the shipped default; candidates under evaluation are appended so that an evaluation
-    # arm equals the default arm plus the candidates (nothing displaced, nothing hidden)
-    stable = [t for t in core if t[2].get("status", "attributed") != "candidate"]
-    candidates = [t for t in core if t[2].get("status", "attributed") == "candidate"]
-    kept_core, dropped = stable[:cap] + candidates, [e["id"] for _, _, e in stable[cap:]]
-    selected = [e for _, _, e in kept_core + situational]
+    tasks = [t for t in classification.get("task", []) if t in PHASES]
+    # One group per named task, so a research rule is never weighed against an implementation one.
+    # A single task keeps one unnamed group, which renders as today's flat list.
+    groups = [EVERY_PHASE] + [PHASES[t] for t in tasks] if len(tasks) > 1 else [EVERY_PHASE]
+    by_phase = {g: {"core": [], "situational": []} for g in groups}
+    for bucket, items in (("core", core), ("situational", situational)):
+        for t in items:
+            g = PHASES.get(_phase_of(t[2], tasks), EVERY_PHASE) if len(tasks) > 1 else EVERY_PHASE
+            by_phase.setdefault(g, {"core": [], "situational": []})[bucket].append(t)
+    # The cap governs the shipped default per phase; candidates under evaluation are appended so that
+    # an evaluation arm equals the default arm plus the candidates (nothing displaced, nothing hidden).
+    selected, dropped, rendered = [], [], []
+    for g in groups:
+        items = by_phase[g]
+        stable = [t for t in items["core"] if t[2].get("status", "attributed") != "candidate"]
+        candidates = [t for t in items["core"] if t[2].get("status", "attributed") == "candidate"]
+        kept = [e for _, _, e in stable[:cap] + candidates + items["situational"]]
+        dropped += [e["id"] for _, _, e in stable[cap:]]
+        if kept:
+            rendered.append((g, kept))
+            selected += kept
     layers = _layers(ws, f"practices/{domain}.yaml")
     shipped = _dir() / "practices" / f"{domain}.yaml"
     return {"domain": domain,
@@ -183,6 +213,8 @@ def _practice(ws, domain: str, classification: dict, statuses, subagents: bool) 
             "matched_concerns": [c for c in concerns if any(c in e.get("concerns", []) for e in selected)],
             "dropped_by_budget": dropped,
             "heading": str(catalog["render"].get("heading", "Rules:")),
+            "phases": [{"phase": g, "entries": [e["id"] for e in kept]} for g, kept in rendered],
+            "rendered": rendered,
             "entries": [{"id": e["id"], "label": _label(e), "text": " ".join(e["text"].split())} for e in selected]}
 
 
@@ -201,12 +233,27 @@ def render(ws, profile: dict, capability: str, classification: dict, *, statuses
     blocks = [_practice(ws, n, classification, statuses, bool(profile.get("subagents"))) for n in names]
     entries = [e for b in blocks for e in b["entries"]]
     heading = blocks[0]["heading"]
-    practice_text = (heading + "\n" + "\n".join(f"- {e['label']}: {e['text']}" for e in entries)) if entries else ""
-    practice_block = {**{k: v for k, v in blocks[0].items() if k != "heading"},
+    # One phase at a time, base rules before each specialist's, so a reader sees every rule for
+    # researching together and every rule for implementing together.
+    tasks = [t for t in classification.get("task", []) if t in PHASES]
+    order = [EVERY_PHASE] + [PHASES[t] for t in tasks] if len(tasks) > 1 else [EVERY_PHASE]
+    lines = []
+    for phase in order:
+        rules = [e for b in blocks for g, kept in b["rendered"] if g == phase for e in kept]
+        if not rules:
+            continue
+        if len(order) > 1:
+            lines.append("")
+            lines.append(phase)
+        lines += [f"- {_label(e)}: {' '.join(e['text'].split())}" for e in rules]
+    practice_text = (heading + "\n" + "\n".join(lines).lstrip("\n")) if entries else ""
+    practice_block = {**{k: v for k, v in blocks[0].items() if k not in ("heading", "rendered")},
                       "revision": revision(), "text": practice_text, "entries": entries,
                       "selected": [i for b in blocks for i in b["selected"]],
                       "matched_concerns": sorted({c for b in blocks for c in b["matched_concerns"]}),
                       "dropped_by_budget": [i for b in blocks for i in b["dropped_by_budget"]],
+                      "phases": [{"phase": g, "entries": [i for b in blocks for gg, kept in b["rendered"] if gg == g for i in [e["id"] for e in kept]]}
+                                 for g in order if any(gg == g for b in blocks for gg, _ in b["rendered"])],
                       "domains": [{k: b[k] for k in ("domain", "selected", "dropped_by_budget", "shipped_sha256", "effective_sha256")} for b in blocks]}
     text = "\n".join(part for part in (host_block["text"], practice_text) if part)
     return {"text": text, "host": host_block, "practice": practice_block}
@@ -238,6 +285,8 @@ def audit_composed(text: str, supplied: list[dict]) -> tuple[list[str], list[str
         l = l.strip()
         if not l:
             continue
+        if not l.startswith("- ") and l.endswith(":") and " " in l:
+            continue  # a phase heading the CLI supplied, e.g. "While researching:"
         _check(l.startswith("- ") and ": " in l, f"rule line is not `- <labels>: <applied directive>`: {l[:60]!r}")
         labels = [x.strip() for x in l[2:].split(": ", 1)[0].replace(" and ", ",").split(",") if x.strip()]
         for lab in labels:
