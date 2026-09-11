@@ -31,11 +31,8 @@ That installs the CLI and downloads your rules from the
 [Fab7 marketplace](https://github.com/fab7hq/fab7) into `~/.fab7/rf/config/`.
 Later, `ringframe sync` updates them.
 
-Then install the plugin for your agent — see the guides below.
-
-> The published PyPI release predates this setup and cannot read it, so the
-> installer takes the CLI from `main` for now. Building from a checkout:
-> `./install.sh --source`.
+Then install the plugin for your agent — see the guides below. Building from
+a checkout: `./install.sh --source`.
 
 ## Set up your agent
 

@@ -2,10 +2,8 @@
 # Install or upgrade, then initialize the current user's RingFrame defaults.
 set -eu
 
-# Until a release that reads configuration from fab7hq/fab7 is published, install
-# from main. Switch back to the published package when one exists.
 if [ "$#" -eq 0 ]; then
-    package="git+https://github.com/fab7hq/ringframe@main"
+    package=ringframe
 elif [ "$#" -eq 1 ] && [ "$1" = "--source" ]; then
     package=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
     if [ ! -f "$package/core/ringframe/cli.py" ]; then
