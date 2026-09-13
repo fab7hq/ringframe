@@ -19,4 +19,4 @@ uv tool install --upgrade --reinstall "$package"
 "$(uv tool dir --bin)/ringframe" init --global
 printf '\n%s\n' 'Now install the plugin for your harness from the Fab7 marketplace:'
 printf '%s\n' '  Claude Code:  /plugin marketplace add fab7hq/fab7 && /plugin install rf@fab7'
-printf '%s\n' '  Codex:        codex plugin marketplace add fab7hq/fab7 && codex plugin install rf@fab7' 
+printf '%s\n' '  Codex:        codex plugin marketplace add fab7hq/fab7 && codex plugin add rf@fab7'

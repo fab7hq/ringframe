@@ -63,7 +63,7 @@ on purpose.
 
 ```sh
 ringframe ledger verify --json
-ringframe sessions prune --older-than 7d --json
+ringframe sessions prune --older-than 7d
 ```
 
 `verify` looks for a truncated last line, bad JSON, missing or altered files,

@@ -1,8 +1,8 @@
 """`ringframe` command line.
 
-Three output modes: `--minimal` prints only the fields a decision needs, compactly, for an
-agent reading mid-conversation; `--json` prints everything, for people, scripts and audits;
-neither prints plain text. Minimal changes what is shown, never what is recorded.
+Fetch commands accept `--minimal` for conversation context or `--json` for complete
+observation. Actions return a concise result by default and accept neither flag.
+Output choices never change stored records.
 
 Exit codes: 0 ok, 1 usage, 2 refused by a rule, 3 needs input, 4 internal."""
 
@@ -12,7 +12,7 @@ import sys
 import tarfile
 from pathlib import Path
 
-from ringframe import __version__, ask, config, deltas, evaluate, profiles, seal, sessions, store, workspace
+from ringframe import __version__, ask, config, deltas, evaluate, output, profiles, seal, sessions, store, workspace
 from ringframe.ask import NeedsInput
 from ringframe.seal import Refused
 from ringframe.store import LedgerError
@@ -36,45 +36,6 @@ def _emit(obj, as_json=True, minimal=False):
         print(obj, end="" if obj.endswith("\n") else "\n")
 
 
-# What each command shows under --minimal: only the fields a skill reads to decide. A command
-# with no entry here emits its full result compactly, so nothing is hidden by omission.
-CAPABILITY_KEYS = ("id", "selection", "effects", "confirmation", "activation",
-                   "delivery_mode", "continuation", "limitations", "requires_explicit_request_for_effects")
-DOMAIN_KEYS = ("domain", "base", "description", "concerns", "project_opted_in")
-ASK_LIST_KEYS = ("ask_id", "title", "state", "capability")
-ASK_SHOW_KEYS = ("ask_id", "title", "state", "capability", "prompt_path", "source_verified")
-
-
-def _pick(d: dict, keys) -> dict:
-    return {k: d[k] for k in keys if k in d}
-
-
-MINIMAL = {
-    ("profile", "show"): lambda d: {"host": d["host"], "routing": d["routing"],
-                                    "capabilities": [_pick(c, CAPABILITY_KEYS) for c in d["capabilities"]]},
-    ("deltas", "domains"): lambda d: {"domains": [_pick(x, DOMAIN_KEYS) for x in d["domains"]]},
-    ("ask", "compile"): lambda d: _pick(d, ("ask_id", "prompt_path", "delivery_mode", "source_verified")),
-    ("ask", "confirm"): lambda d: _pick(d, ("ask_id", "confirmation")),
-    ("ask", "cancel"): lambda d: _pick(d, ("ask_id", "state")),
-    ("ask", "delivery"): lambda d: _pick(d, ("ask_id", "mode", "state")),
-    ("ask", "submitted"): lambda d: _pick(d, ("ask_id", "state")),
-    ("ask", "list"): lambda d: {"asks": [_pick(a, ASK_LIST_KEYS) for a in d["asks"]]},
-    ("ask", "show"): lambda d: _pick(d, ASK_SHOW_KEYS),
-    ("eval", "open"): lambda d: {**_pick(d, ("eval_id", "brief_path", "changes")),
-                                 "anchor": d["anchor"]["ref"], "subject": d["subject"]["kind"]},
-    ("eval", "close"): lambda d: _pick(d, ("eval_id", "verdict", "confidence")),
-    ("eval", "list"): lambda d: {"evals": [_pick(e, ("eval_id", "verdict", "confidence", "state")) for e in d["evals"]]},
-    ("seal", "create"): lambda d: _pick(d, ("seal_id", "disposition")),
-    ("seal", "check"): lambda d: _pick(d, ("seal_id", "fresh", "subject_matches")),
-}
-
-
-def _project(ns, result):
-    """Narrow a command's result for --minimal; unknown commands pass through."""
-    fn = MINIMAL.get((ns.cmd, getattr(ns, "sub", None)))
-    return fn(result) if fn and isinstance(result, dict) else result
-
-
 def _actor(text: str | None, authority: str) -> dict:
     kind, _, ident = (text or "human:local-user").partition(":")
     return {"kind": kind, "id": ident or "local-user", "authority": authority}
@@ -95,28 +56,36 @@ class _Parser(argparse.ArgumentParser):
         raise SystemExit(1)
 
 
-GLOBAL_FLAGS = {"--json": 0, "--minimal": 0, "--workspace": 1, "--actor": 1, "--authority": 1}
+GLOBAL_FLAGS = {"--workspace": 1, "--actor": 1, "--authority": 1}
+OUTPUT_FLAGS = {"--json", "--minimal"}
 
 
 def _hoist_globals(argv):
-    """Allow global options anywhere on the line (argparse only accepts them before the subcommand)."""
-    front, rest, i = [], [], 0
+    """Move global options to the root and output options to the fetch subparser."""
+    front, rest, views, i = [], [], [], 0
     while i < len(argv):
+        if argv[i] in OUTPUT_FLAGS:
+            views.append(argv[i]); i += 1
+            continue
         n = GLOBAL_FLAGS.get(argv[i])
         if n is None:
             rest.append(argv[i]); i += 1
         else:
             front += argv[i:i + 1 + n]; i += 1 + n
-    return front + rest
+    return front + rest + views
+
+
+def _fetch_options(parser):
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--json", action="store_true", help="complete observation, pretty-printed")
+    mode.add_argument("--minimal", action="store_true", help="only data needed in conversation, compact")
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = _Parser(prog="ringframe", description=__doc__)
     p.add_argument("--version", action="version", version=f"ringframe {__version__}")
     p.add_argument("--workspace", type=Path, help="project root (default: current directory; hook payload cwd for hooks)")
-    mode = p.add_mutually_exclusive_group()
-    mode.add_argument("--json", action="store_true", help="every field, pretty-printed, for scripts and audits")
-    mode.add_argument("--minimal", action="store_true", help="only the fields a decision needs, compact, for an agent")
+    p.set_defaults(json=False, minimal=False)
     p.add_argument("--actor", help="kind:id, default human:local-user")
     p.add_argument("--authority", choices=["interactive", "preauthorized"], default="interactive")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -128,6 +97,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     prof = sub.add_parser("profile").add_subparsers(dest="sub", required=True)
     ps = prof.add_parser("show")
+    _fetch_options(ps)
     ps.add_argument("--host", required=True)
     ps.add_argument("--version", dest="host_version", default="")
 
@@ -158,11 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--handoff", action="store_true")
     d.add_argument("--state", choices=["delivery_failed", "unavailable"])
     d.add_argument("--reason", default="")
-    a.add_parser("list")
+    _fetch_options(a.add_parser("list"))
     s = a.add_parser("show")
+    _fetch_options(s)
     s.add_argument("--ask")
     s.add_argument("--session")
     r = a.add_parser("resolve")
+    _fetch_options(r)
     r.add_argument("--session")
     r.add_argument("--kind", default="ask")
 
@@ -175,7 +147,7 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--eval", required=True)
     cl.add_argument("--intent", required=True, help="inline JSON or @file (ringframe.eval-intent/1)")
     cl.add_argument("--judgement", action="append", required=True, help="inline JSON or @file (ringframe.eval-judgement/1), at least three")
-    e.add_parser("list")
+    _fetch_options(e.add_parser("list"))
 
     se = sub.add_parser("seal").add_subparsers(dest="sub", required=True)
     sc = se.add_parser("create")
@@ -183,18 +155,21 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--eval", help="default: the latest completed Eval over the open Asks")
     sc.add_argument("--note", help="the person's words, recorded verbatim")
     ck = se.add_parser("check")
+    _fetch_options(ck)
     ck.add_argument("--seal", required=True)
 
-    sub.add_parser("ledger").add_subparsers(dest="sub", required=True).add_parser("verify")
+    _fetch_options(sub.add_parser("ledger").add_subparsers(dest="sub", required=True).add_parser("verify"))
 
     dl = sub.add_parser("deltas").add_subparsers(dest="sub", required=True)
     ls = dl.add_parser("list")
+    _fetch_options(ls)
     ls.add_argument("--host")
     ls.add_argument("--capability")
     ls.add_argument("--effective", action="store_true", help="merged practice deltas with the layer each came from")
     ls.add_argument("--domain", default=deltas.DEFAULT_DOMAIN)
-    dl.add_parser("domains", help="installed practice domains, their descriptions and concern vocabularies")
+    _fetch_options(dl.add_parser("domains", help="installed practice domains, their descriptions and concern vocabularies"))
     rd = dl.add_parser("render")
+    _fetch_options(rd)
     rd.add_argument("--host", required=True)
     rd.add_argument("--host-version", default="")
     rd.add_argument("--capability", required=True)
@@ -266,8 +241,8 @@ def _dispatch(ns, ws) -> tuple[int, object]:
             if not ns.ask:
                 build_parser().error("--ask is required unless --from-hook")
             if ns.handoff:
-                text, rec = ask.delivery_handoff(ws, ns.ask)
-                return 0, rec if ns.json else text
+                text, _ = ask.delivery_handoff(ws, ns.ask)
+                return 0, text
             if not ns.state:
                 build_parser().error("--handoff or --state is required")
             return 0, ask.delivery_state(ws, ns.ask, ns.state, ns.reason)
@@ -288,7 +263,7 @@ def _dispatch(ns, ws) -> tuple[int, object]:
             return 0, {"host": entries, "practice": catalog["entries"], "concerns": catalog["concerns"]}
         prof = profiles.for_host({"name": ns.host, "version": ns.host_version})
         rendered = deltas.render(ws, prof, ns.capability, _json_arg(ns.classification), statuses=tuple(ns.statuses.split(",")))
-        return 0, rendered if ns.json else rendered["text"]
+        return 0, rendered if ns.json or ns.minimal else rendered["text"]
     if ns.cmd == "eval":
         if ns.sub == "list":
             return 0, {"evals": evaluate.list_records(ws)}
@@ -343,22 +318,23 @@ def main(argv=None) -> int:
     parser = build_parser()
     ns = parser.parse_args(_hoist_globals(list(sys.argv[1:] if argv is None else argv)))
     ws = workspace.resolve(explicit=ns.workspace)
+    concise = ns.minimal or (ns.cmd, getattr(ns, "sub", None)) in output.ACTION
     try:
         code, result = _dispatch(ns, ws)
     except (json.JSONDecodeError, ValueError, FileNotFoundError) as exc:
-        _emit({"error": "usage", "detail": str(exc)}, ns.json, ns.minimal)
+        _emit({"error": "usage", "detail": str(exc)}, ns.json, concise)
         return 1
     except (NeedsInput, evaluate.NeedsInput) as exc:
-        _emit({"needs_input": exc.reason, "candidates": exc.candidates}, ns.json, ns.minimal)
+        _emit({"needs_input": exc.reason, "candidates": output.candidates(exc.candidates) if concise else exc.candidates}, ns.json, concise)
         return 3
     except Refused as exc:
-        _emit({"error": "seal.refused", "refusal_codes": exc.codes}, ns.json, ns.minimal)
+        _emit({"error": "seal.refused", "refusal_codes": exc.codes}, ns.json, concise)
         return 2
     except (LedgerError, workspace.WorkspaceError) as exc:
-        _emit({"error": exc.code, "detail": exc.detail}, ns.json, ns.minimal)
+        _emit({"error": exc.code, "detail": exc.detail}, ns.json, concise)
         return 2
     except config.ConfigError as exc:
-        _emit({"error": "config", "detail": str(exc)}, ns.json, ns.minimal)
+        _emit({"error": "config", "detail": str(exc)}, ns.json, concise)
         return 2
     except Exception as exc:  # pragma: no cover - internal
         print(f"ringframe: internal error: {exc!r}", file=sys.stderr)
@@ -366,5 +342,5 @@ def main(argv=None) -> int:
     if ns.cmd == "ask" and getattr(ns, "sub", None) == "copy":
         sys.stdout.write(str(result))
         return code
-    _emit(_project(ns, result) if ns.minimal else result, ns.json, ns.minimal)
+    _emit(output.project(ns, result, ws), ns.json, concise)
     return code

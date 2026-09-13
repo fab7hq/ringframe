@@ -126,9 +126,9 @@ That comparison matches items by ID first, then by wording, then by overlap.
 It is a best effort at "is this the same obligation, reworded", not a proof.
 
 ```sh
-ringframe eval open --json
+ringframe eval open
 ringframe eval close --eval <eval_id> --intent @intent.json \
-  --judgement @coverage.json --judgement @drift.json --judgement @adversary.json --json
+  --judgement @coverage.json --judgement @drift.json --judgement @adversary.json
 ringframe eval list --json
 ```
 

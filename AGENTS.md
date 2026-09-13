@@ -26,12 +26,14 @@
   as behavioral guidance, never as enforcement or proof of execution.
 - Route every ledger write through the CLI. Keep finalized artifacts and
   ledger lines immutable; correct them with new records and typed links.
-- Preserve public JSON keys, schemas, and exit codes from 0.0.1 onward. Extend
-  contracts compatibly; do not silently remove or rename fields.
-- Preserve global-option placement: `--json`, `--minimal`, `--workspace`,
-  `--actor`, and `--authority` may appear before or after subcommands.
-- Keep `--json` the complete view and `--minimal` a projection of it. Adding a
-  field is a `--json` change; showing it to an agent is a separate decision.
+- Preserve full fetch JSON keys, stored schemas, and exit codes. Do not
+  silently remove or rename fields from observation views or stored records.
+- Preserve option placement: `--workspace`, `--actor`, and `--authority` may
+  appear before or after subcommands. Fetch commands also accept `--json` and
+  `--minimal` in either position; action commands accept neither output flag.
+- Keep fetch `--json` the complete observation view and `--minimal` an explicit
+  projection for conversation context. Actions return one concise response
+  with the data their callers need; keep full detail in the stored artifacts.
 - Keep hook scripts non-blocking and exiting 0, including on malformed input
   or a missing CLI. Record delivery only from the appropriate evidence.
 - Mark source text verified only when it matches a captured Ask invocation
@@ -44,7 +46,7 @@
 - Run relevant deterministic tests and `git diff --check` before handoff;
   run the full suite for changes to shared contracts or skill instructions.
 - Do not call a model from unit tests. Before sandboxed LLM testing or host
-  acceptance claims, read and follow [LLM verification](LLM_VERIFICATION.md).
+  acceptance claims, read and follow [LLM verification](../LLM_VERIFICATION.md).
   Keep the authenticated test runner and its evidence outside the source tree.
 - Cite retained qualification IDs and exact tested artifacts for host claims.
   Treat changed plugin bytes as needing fresh qualification; unit tests do

@@ -66,7 +66,7 @@ still matched at the moment you sealed.
 Outside Git, the subject may simply be unknown, and the receipt says so.
 
 ```sh
-ringframe seal create --disposition accepted --note "Reviewed locally" --json
+ringframe seal create --disposition accepted --note "Reviewed locally"
 ringframe seal check --seal <seal_id> --json
 ```
 

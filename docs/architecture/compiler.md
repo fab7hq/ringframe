@@ -78,27 +78,44 @@ ringframe deltas render --host codex --capability native_plan \
   --classification '{"task":["implement"],"result":"workspace_change","interaction":"approval_gated","horizon":"session","effects":["write"],"concerns":["api_surface"]}'
 ```
 
-## Three ways to read the CLI
+## CLI output
 
-Every command prints one of three things, and who is reading decides which:
+Fetch commands separate conversation context from complete observation:
 
-| Flag | Reader | Output |
+| Commands | `--minimal` | `--json` |
 | --- | --- | --- |
-| `--minimal` | your agent, mid-conversation | only the fields a decision needs, compact |
-| `--json` | you, a script, an audit | every field, pretty-printed |
-| neither | you, at a terminal | plain text |
+| `profile show` | Routing guidance and actionable capabilities | Full profile and provenance |
+| `deltas domains`, `deltas list` | Domain vocabulary or directive content | Full catalogs and selection metadata |
+| `deltas render` | Applicable directive text and phase headings | Text, entries and selection provenance |
+| `ask list`, `ask show`, `ask resolve` | Identity, state and selection/next-action data | Full Ask summaries |
+| `eval list` | State, verdict, confidence and Ask basis | Full Eval summaries |
+| `seal check`, `ledger verify` | Verification result and failure findings | Complete verification result |
 
-The skills always pass `--minimal`. `--json` carries digests, contributing
-files, dropped rules and provenance — all of it useful to you later, none of it
-changing a word your agent writes. On one Ask that difference is about 16,000
-characters.
+The flags are mutually exclusive and may appear before or after the subcommand.
+Without either flag, fetch commands retain their normal output: pretty JSON for
+structured results and plain text for `deltas render`. Minimal profile output
+omits empty activation/receipt objects; absence means no declared mechanism.
 
-`--minimal` only narrows what is *printed*. The full detail is recorded either
-way, so a receipt written from a minimal run is identical to one written from
-a verbose run. The two flags cannot be combined.
+Actions have one concise default response and reject both output flags:
+`init`, `sync`, `ask compile/copy/confirm/cancel/submitted/delivery`,
+`eval open/close`, `seal create`, `sessions capture/prune`, and `export`.
+Structured responses are compact JSON; `ask copy` returns the exact prompt,
+and delivery handoff returns the handoff instructions as plain text.
+Errors retain their code and actionable details.
 
-A command whose answer is already prose — `deltas render`, the delivery
-handoff — prints the same text under `--minimal` as without it.
+This replaces the earlier action output flags. Remove `--json` and `--minimal`
+from action invocations, including hook scripts. Observe full persisted detail
+through fetch commands or the corresponding ledger and artifact files; do not
+repeat an action to inspect its result.
+
+Concise does not mean dropping required inputs: `eval open` retains the brief
+digest needed by judges, `eval close` retains report findings, and `seal create`
+returns the receipt path and decision facts. Output selection does not change
+stored records.
+
+The Ask skill reuses applicable profile, domain, directive and exact compiled
+prompt results already in context. Each reuse condition sits beside its command;
+new candidates and confirmation events still use their own action calls.
 
 Every Ask records the same detail under `ask.compiled.data.compiler`, so you can
 always reconstruct which rules were in force for a prompt written months ago.

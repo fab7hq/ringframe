@@ -41,15 +41,15 @@ def staged(repo, name="stage-1"):
 def confirm(repo, mp, **kw):
     cap = kw.get("capability", "native_plan")
     code, out, err = run(repo, "ask", "compile", "--staged", staged(repo, kw.get("stage", "stage-1")), "--title", kw.get("title", "Login"),
-                         "--capability", cap, "--classification", CLS, "--route", ROUTE, "--host", host(kw.get("session", "s1")), "--json", monkeypatch=mp)
+                         "--capability", cap, "--classification", CLS, "--route", ROUTE, "--host", host(kw.get("session", "s1")), monkeypatch=mp)
     if code == 0:
-        c2, o2, _ = run(repo, "ask", "confirm", "--ask", out["ask_id"], "--json", monkeypatch=mp)
+        c2, o2, _ = run(repo, "ask", "confirm", "--ask", out["ask_id"], monkeypatch=mp)
         assert c2 == 0 and o2["confirmation"]["observed_by"] == "skill"
     return code, out, err
 
 
 def test_init_and_profile_show(repo, monkeypatch):
-    code, out, _ = run(repo, "init", "--json", monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "init", monkeypatch=monkeypatch)
     assert code == 0 and out["rf_dir"].endswith(".fab7/rf") and (repo / ".fab7/rf/.gitignore").exists()
     code, out, _ = run(repo, "profile", "show", "--host", "claude-code", "--version", "2.1.260", "--json", monkeypatch=monkeypatch)
     assert code == 0 and out["profile_id"] == "claude-code" and len(out["sha256"]) == 64
@@ -59,15 +59,15 @@ def test_init_and_profile_show(repo, monkeypatch):
 
 def test_ask_confirm_show_delivery_flow(repo, monkeypatch):
     payload = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "s1", "prompt": "/rf:ask fix login", "cwd": str(repo)})
-    code, out, _ = run(repo, "sessions", "capture", "--host", "claude-code", "--json", stdin=payload, monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "sessions", "capture", "--host", "claude-code", stdin=payload, monkeypatch=monkeypatch)
     assert code == 0 and out["captured"] is True
     code, out, _ = confirm(repo, monkeypatch)
-    assert code == 0 and set(out) == {"ask_id", "source", "prompt", "prompt_path", "delivery_mode", "source_verified"} and out["source_verified"] == "exact"
+    assert code == 0 and set(out) == {"ask_id", "prompt_path", "delivery_mode", "source_verified"} and out["source_verified"] == "exact"
     ask_id = out["ask_id"]
     hook = json.dumps({"hook_event_name": "PostToolUse", "session_id": "s1", "tool_name": "EnterPlanMode", "tool_use_id": "t1", "tool_response": {"ok": 1}})
-    code, out, _ = run(repo, "ask", "delivery", "--from-hook", "--json", stdin=hook, monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "ask", "delivery", "--from-hook", stdin=hook, monkeypatch=monkeypatch)
     assert code == 0 and out["recorded"] is True and out["state"] == "native_accepted"
-    code, out, _ = run(repo, "ask", "delivery", "--from-hook", "--json", stdin=hook, monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "ask", "delivery", "--from-hook", stdin=hook, monkeypatch=monkeypatch)
     assert code == 0 and out["recorded"] is False  # never fails the host turn
     code, out, _ = run(repo, "ask", "show", "--json", monkeypatch=monkeypatch)
     assert code == 0 and out["ask_id"] == ask_id and out["delivery"] == "native_accepted"
@@ -79,7 +79,7 @@ def test_ask_handoff_state_and_resolution_exit_codes(repo, monkeypatch):
     code, a, _ = confirm(repo, monkeypatch)
     code, out, _ = run(repo, "ask", "delivery", "--ask", a["ask_id"], "--handoff", monkeypatch=monkeypatch)
     assert code == 0 and "prompt.txt" in out and "Claude Code TUI" in out
-    code, out, err = run(repo, "ask", "delivery", "--ask", a["ask_id"], "--state", "unavailable", "--reason", "x", "--json", monkeypatch=monkeypatch)
+    code, out, err = run(repo, "ask", "delivery", "--ask", a["ask_id"], "--state", "unavailable", "--reason", "x", monkeypatch=monkeypatch)
     assert code == 2 and out["error"] == "delivery.duplicate"
     code, b, _ = confirm(repo, monkeypatch, stage="stage-2", title="Logout", session="s2", capability="native_direct")
     code, out, _ = run(repo, "ask", "show", "--json", monkeypatch=monkeypatch)
@@ -92,31 +92,31 @@ def test_ask_handoff_state_and_resolution_exit_codes(repo, monkeypatch):
 
 def test_ask_compile_cancel_submitted_copy_and_usage_errors(repo, monkeypatch):
     code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "t", "--capability", "native_plan", "--classification", CLS,
-                       "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+                       "--route", ROUTE, "--host", host(), monkeypatch=monkeypatch)
     assert code == 0 and out["delivery_mode"] == "native_dispatch"
-    code, c, _ = run(repo, "ask", "cancel", "--ask", out["ask_id"], "--reason", "nah", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and c["cancellation"] == {"observed_by": "skill"}
-    code, s, _ = run(repo, "ask", "submitted", "--ask", out["ask_id"], "--as-modified", "--json", monkeypatch=monkeypatch)
+    code, c, _ = run(repo, "ask", "cancel", "--ask", out["ask_id"], "--reason", "nah", monkeypatch=monkeypatch)
+    assert code == 0 and c["state"] == "cancelled"
+    code, s, _ = run(repo, "ask", "submitted", "--ask", out["ask_id"], "--as-modified", monkeypatch=monkeypatch)
     assert code == 0 and s["state"] == "attributed" and s["as_modified"] is True
     code, text, _ = run(repo, "ask", "copy", "--ask", out["ask_id"], monkeypatch=monkeypatch)
     assert code == 0 and text == "Fix login.\n"
     code, out, err = run(repo, "ask", "compile", "--staged", "/nope", "--title", "t", "--capability", "native_plan", "--classification", CLS,
-                         "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+                         "--route", ROUTE, "--host", host(), monkeypatch=monkeypatch)
     assert code == 2 and out["error"] == "ask.staged_dir"
     with pytest.raises(SystemExit) as e:
         run(repo, "ask", "compile", monkeypatch=monkeypatch)
     assert e.value.code == 1
     code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo, "s3"), "--title", "t", "--capability", "native_plan",
-                       "--classification", "{not json", "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+                       "--classification", "{not json", "--route", ROUTE, "--host", host(), monkeypatch=monkeypatch)
     assert code == 1 and out["error"] == "usage"
 
 
 def test_capture_of_a_pasted_prompt_records_observed_submission(repo, monkeypatch):
     code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "t", "--capability", "native_direct", "--classification", CLS,
-                       "--route", ROUTE, "--host", json.dumps({"name": "codex", "surface": "native-tui"}), "--json", monkeypatch=monkeypatch)
+                       "--route", ROUTE, "--host", json.dumps({"name": "codex", "surface": "native-tui"}), monkeypatch=monkeypatch)
     assert code == 0
     payload = json.dumps({"hook_event_name": "UserPromptSubmit", "session_id": "c9", "prompt": "Fix login.\n", "cwd": str(repo)})
-    code, cap, _ = run(repo, "sessions", "capture", "--host", "codex", "--json", stdin=payload, monkeypatch=monkeypatch)
+    code, cap, _ = run(repo, "sessions", "capture", "--host", "codex", stdin=payload, monkeypatch=monkeypatch)
     assert code == 0 and cap["captured"] is True and cap["submission"]["ask_id"] == out["ask_id"] and cap["submission"]["state"] == "observed"
     code, shown, _ = run(repo, "ask", "show", "--json", monkeypatch=monkeypatch)
     assert shown["submission"] == "observed" and shown["outcome"] == "compiled"
@@ -124,8 +124,10 @@ def test_capture_of_a_pasted_prompt_records_observed_submission(repo, monkeypatc
 
 def test_eval_and_seal_cli(repo, monkeypatch, tmp_path):
     ws, a, b, sha = two_asks_and_work(repo)
-    code, out, _ = run(repo, "eval", "open", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and out["basis"]["asks"] == [a, b] and out["subject"]["ref"] == sha and out["brief_path"].endswith("brief.json")
+    code, out, _ = run(repo, "eval", "open", monkeypatch=monkeypatch)
+    assert code == 0 and out["subject"] == "git_commit" and out["brief_path"].endswith("brief.json")
+    brief = json.loads((ws.rf_dir / f"evals/{out['eval_id']}/brief.json").read_bytes())
+    assert [item["ask_id"] for item in brief["asks"]] == [a, b] and brief["subject"]["ref"] == sha
     sha_b = out["brief"]["sha256"]
     items = [{"id": "i1", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
     (tmp_path / "intent.json").write_text(json.dumps(intent(sha_b, items)))
@@ -134,19 +136,21 @@ def test_eval_and_seal_cli(repo, monkeypatch, tmp_path):
         f = tmp_path / f"j{n}.json"
         f.write_text(json.dumps(judgement(sha_b, ang, {"i1": "yes"}, {"docs/notes.md": "unexplained"})))
         files += ["--judgement", f"@{f}"]
-    code, out2, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files[:4], "--json", monkeypatch=monkeypatch)
+    code, out2, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files[:4], monkeypatch=monkeypatch)
     assert code == 2 and out2["error"] == "eval.too_few_judges"
-    code, rec, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files, "--json", monkeypatch=monkeypatch)
+    code, rec, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files, monkeypatch=monkeypatch)
     assert code == 0 and rec["verdict"] == "drifted" and rec["confidence"] == 1.0 and rec["drift"]["commission"][0]["path"] == "docs/notes.md"
-    code, out3, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files, "--json", monkeypatch=monkeypatch)
+    code, out3, _ = run(repo, "eval", "close", "--eval", out["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files, monkeypatch=monkeypatch)
     assert code == 2 and out3["error"] == "ledger.immutable"
     code, listed, _ = run(repo, "eval", "list", "--json", monkeypatch=monkeypatch)
     assert [e["verdict"] for e in listed["evals"]] == ["drifted"]
-    code, receipt, _ = run(repo, "seal", "create", "--disposition", "accepted", "--note", "shipping the drift knowingly", "--json", monkeypatch=monkeypatch)
-    assert code == 0 and receipt["disposition"] == "accepted" and receipt["eval"]["verdict"] == "drifted" and receipt["note"] == "shipping the drift knowingly"
-    code, out, _ = run(repo, "seal", "create", "--disposition", "accepted", "--json", monkeypatch=monkeypatch)
+    code, receipt, _ = run(repo, "seal", "create", "--disposition", "accepted", "--note", "shipping the drift knowingly", monkeypatch=monkeypatch)
+    assert code == 0 and receipt["disposition"] == "accepted" and receipt["eval"]["verdict"] == "drifted" and receipt["receipt_path"].endswith(".json")
+    stored_receipt = json.loads((ws.rf_dir / f"seals/{receipt['seal_id']}.json").read_bytes())
+    assert stored_receipt["note"] == "shipping the drift knowingly"
+    code, out, _ = run(repo, "seal", "create", "--disposition", "accepted", monkeypatch=monkeypatch)
     assert code == 2 and out["error"] == "seal.refused" and out["refusal_codes"] == ["seal.no_open_ask"]
-    code, out, _ = run(repo, "eval", "open", "--json", monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "eval", "open", monkeypatch=monkeypatch)
     assert code == 2 and out["error"] == "eval.no_open_ask"
     code, out, _ = run(repo, "seal", "check", "--seal", receipt["seal_id"], "--json", monkeypatch=monkeypatch)
     assert code == 0 and out["fresh"] is True and out["subject_matches"] is True
@@ -156,18 +160,18 @@ def test_eval_and_seal_cli(repo, monkeypatch, tmp_path):
     code, out, _ = run(repo, "seal", "check", "--seal", "sel_nope", "--json", monkeypatch=monkeypatch)
     assert code == 2 and out["fresh"] is False
     with pytest.raises(SystemExit) as e:
-        run(repo, "seal", "create", "--disposition", "shipped", "--json", monkeypatch=monkeypatch)
+        run(repo, "seal", "create", "--disposition", "shipped", monkeypatch=monkeypatch)
     assert e.value.code == 1
 
 
 def test_export_and_prune(repo, monkeypatch, tmp_path):
     code, a, _ = confirm(repo, monkeypatch)
-    code, out, _ = run(repo, "export", "--ask", a["ask_id"], "--out", str(tmp_path / "x.tar"), "--json", monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "export", "--ask", a["ask_id"], "--out", str(tmp_path / "x.tar"), monkeypatch=monkeypatch)
     assert code == 0 and out["files"] == 3
     import tarfile
     names = tarfile.open(tmp_path / "x.tar").getnames()
     assert any(n.endswith("prompt.txt") for n in names) and any(n.endswith("ledger.jsonl") for n in names)
-    code, out, _ = run(repo, "sessions", "prune", "--older-than", "7d", "--json", monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "sessions", "prune", "--older-than", "7d", monkeypatch=monkeypatch)
     assert code == 0 and out["removed"] == []
 
 
@@ -217,7 +221,7 @@ def test_hook_uses_payload_project_and_initializes_private_storage(repo, monkeyp
     project.mkdir()
     monkeypatch.chdir(repo)
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps({"cwd": str(project), "session_id": "nested", "prompt": "/rf:ask fix login"})))
-    assert cli.main(["sessions", "capture", "--host", host_name, "--json"]) == 0
+    assert cli.main(["sessions", "capture", "--host", host_name]) == 0
     rf = project / ".fab7/rf"
     assert (rf / f"sessions/{host_name}/nested/prompts.jsonl").exists()
     assert (rf / ".gitignore").read_text() == "*\n"
@@ -227,7 +231,7 @@ def test_hook_uses_payload_project_and_initializes_private_storage(repo, monkeyp
 
 def test_global_init_mirrors_the_bundle_and_leaves_overrides_alone(repo, tmp_path, monkeypatch, user_home):
     home = user_home(tmp_path / "user-home")
-    code, out, _ = run(repo, "init", "--global", "--from", str(FIXTURE_CONFIG), "--json", monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "init", "--global", "--from", str(FIXTURE_CONFIG), monkeypatch=monkeypatch)
     assert code == 0 and out["revision"] == "local"
     root = home / ".fab7/rf"
     assert not (repo / ".fab7").exists()
@@ -240,7 +244,7 @@ def test_global_init_mirrors_the_bundle_and_leaves_overrides_alone(repo, tmp_pat
     mine.write_text("entries: [{id: practice.kiss, text: Mine.}]\n")
     edited = root / "config/deltas/codex.yaml"
     edited.write_text(edited.read_text() + "\n# scribbled on the mirror\n")
-    code, _, _ = run(repo, "sync", "--from", str(FIXTURE_CONFIG), "--json", monkeypatch=monkeypatch)
+    code, _, _ = run(repo, "sync", "--from", str(FIXTURE_CONFIG), monkeypatch=monkeypatch)
     assert code == 0
     assert mine.read_text() == "entries: [{id: practice.kiss, text: Mine.}]\n"
     assert edited.read_bytes() == (FIXTURE_CONFIG / "deltas/codex.yaml").read_bytes()
@@ -251,16 +255,16 @@ def test_nested_compile_and_hook_delivery_keep_records_in_project(repo, monkeypa
     project.mkdir()
     monkeypatch.chdir(project)
     # No explicit workspace: reproduce a CLI invoked from a nested host project.
-    assert cli.main(["ask", "compile", "--staged", staged(project), "--title", "Login", "--capability", "native_plan", "--classification", CLS, "--route", ROUTE, "--host", host(), "--json"]) == 0
+    assert cli.main(["ask", "compile", "--staged", staged(project), "--title", "Login", "--capability", "native_plan", "--classification", CLS, "--route", ROUTE, "--host", host()]) == 0
     from ringframe import ask, store, workspace
     ws = workspace.resolve(cwd=project)
     record = ask.list_asks(ws)[0]
     ask_id = record["ask_id"]
-    assert cli.main(["ask", "confirm", "--ask", ask_id, "--json"]) == 0
+    assert cli.main(["ask", "confirm", "--ask", ask_id]) == 0
     monkeypatch.chdir(repo)
     payload = {"hook_event_name": "PostToolUse", "cwd": str(project), "session_id": "s1", "tool_name": "EnterPlanMode", "tool_use_id": "t1", "tool_response": {"ok": 1}}
     monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(payload)))
-    assert cli.main(["ask", "delivery", "--from-hook", "--json"]) == 0
+    assert cli.main(["ask", "delivery", "--from-hook"]) == 0
     assert ask.show(ws, ask_id)["delivery"] == "native_accepted"
     assert store.verify(ws) == []
     assert (ws.rf_dir / "asks" / ask_id / "prompt.txt").exists()
@@ -279,7 +283,7 @@ def test_compile_reads_merged_ledger_delta_files(repo, monkeypatch):
     stage.mkdir()
     (stage / "source.txt").write_text("fix login")
     (stage / "body.txt").write_text("Fix login.")
-    code, out, _ = run(repo, "ask", "compile", "--staged", str(stage), "--title", "Login", "--capability", "native_plan", "--classification", cls, "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+    code, out, _ = run(repo, "ask", "compile", "--staged", str(stage), "--title", "Login", "--capability", "native_plan", "--classification", cls, "--route", ROUTE, "--host", host(), monkeypatch=monkeypatch)
     assert code == 0
     from pathlib import Path
     assert "Use the project setting." in Path(out["prompt_path"]).read_text()
@@ -312,7 +316,7 @@ def test_delta_listing_exposes_merged_concern_vocabulary(repo, monkeypatch):
 # ---- Git is a hard requirement, refused at the earliest command --------------------------------
 
 def test_init_refuses_a_non_git_workspace(tmp_path, monkeypatch):
-    code, out, _ = run(tmp_path, "init", "--json", monkeypatch=monkeypatch)
+    code, out, _ = run(tmp_path, "init", monkeypatch=monkeypatch)
     assert code == 2
     assert out["error"] == "workspace.no_git"
     assert "git init" in out["detail"]
@@ -326,7 +330,7 @@ def test_ask_compile_refuses_a_non_git_workspace(tmp_path, monkeypatch):
     (d / "prompt.txt").write_bytes(b"Fix login.\n")
     code, out, _ = run(tmp_path, "ask", "compile", "--staged", str(d), "--title", "Login",
                        "--capability", "native_plan", "--classification", CLS, "--route", ROUTE,
-                       "--host", host(), "--json", monkeypatch=monkeypatch)
+                       "--host", host(), monkeypatch=monkeypatch)
     assert code == 2
     assert out["error"] == "workspace.no_git"
 
@@ -339,7 +343,7 @@ def test_ask_compile_refuses_a_repo_without_a_commit(tmp_path, monkeypatch):
     (d / "prompt.txt").write_bytes(b"Fix login.\n")
     code, out, _ = run(tmp_path, "ask", "compile", "--staged", str(d), "--title", "Login",
                        "--capability", "native_plan", "--classification", CLS, "--route", ROUTE,
-                       "--host", host(), "--json", monkeypatch=monkeypatch)
+                       "--host", host(), monkeypatch=monkeypatch)
     assert code == 2
     assert out["error"] == "workspace.no_commit"
 
@@ -353,7 +357,7 @@ def test_deltas_domains_and_unknown_domain_is_refused(repo, tmp_path, monkeypatc
     cls = json.dumps({"task": ["plan"], "result": "plan", "interaction": "approval_gated",
                       "horizon": "session", "effects": ["read"], "domains": ["teleportation"]})
     code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo), "--title", "T", "--capability", "native_plan",
-                       "--classification", cls, "--route", ROUTE, "--host", host(), "--json", monkeypatch=monkeypatch)
+                       "--classification", cls, "--route", ROUTE, "--host", host(), monkeypatch=monkeypatch)
     assert code == 2 and out["error"] == "ask.classification" and "installed" in out["detail"]
 
 
@@ -377,7 +381,7 @@ def test_minimal_profile_keeps_only_what_routing_reads(repo, monkeypatch):
     assert set(out) == {"host", "routing", "capabilities"}
     assert set(out["capabilities"][0]) <= {
         "id", "selection", "effects", "confirmation", "activation", "delivery_mode",
-        "continuation", "limitations", "requires_explicit_request_for_effects"}
+        "continuation", "limitations", "requires_explicit_request_for_effects", "receipt"}
     assert out["capabilities"][0]["selection"] and out["routing"]["precedence"]
 
 
@@ -389,31 +393,21 @@ def test_minimal_is_smaller_than_json_for_the_calls_ask_makes(repo, monkeypatch)
         assert len(json.dumps(small)) < len(json.dumps(full)), args
 
 
-def test_a_command_without_a_projection_still_emits_its_full_result(repo, monkeypatch):
+def test_ledger_verification_keeps_all_findings(repo, monkeypatch):
     _, full, _ = run(repo, "ledger", "verify", "--json", monkeypatch=monkeypatch)
     _, small, _ = run(repo, "ledger", "verify", "--minimal", monkeypatch=monkeypatch)
     assert small == full  # nothing is hidden by omission
 
 
-def test_minimal_changes_what_is_shown_never_what_is_stored(repo, monkeypatch):
-    """The same Ask compiled either way records the same event; only the printout differs."""
-    def compile_with(flag, stage, session):
-        code, out, _ = run(repo, "ask", "compile", "--staged", staged(repo, stage), "--title", "Login",
-                           "--capability", "native_plan", "--classification", CLS, "--route", ROUTE,
-                           "--host", host(session), flag, monkeypatch=monkeypatch)
-        assert code == 0
-        return out
-
-    shown_json = compile_with("--json", "j1", "s1")
-    shown_min = compile_with("--minimal", "m1", "s2")
-    assert set(shown_min) < set(shown_json)  # the printout is narrower
-
-    events = [json.loads(l) for l in (repo / ".fab7/rf/ledger.jsonl").read_bytes().splitlines()]
-    compiled = [e["data"] for e in events if e["type"] == "ask.compiled"]
-    assert len(compiled) == 2
-    first, second = compiled
-    assert first.keys() == second.keys()          # the record is unchanged in shape
-    assert first["compiler"] == second["compiler"]  # and in its selection provenance
+def test_fetch_views_never_change_stored_records(repo, monkeypatch):
+    code, created, _ = confirm(repo, monkeypatch)
+    assert code == 0
+    ledger = repo / ".fab7/rf/ledger.jsonl"
+    before = ledger.read_bytes()
+    _, full, _ = run(repo, "ask", "show", "--ask", created["ask_id"], "--json", monkeypatch=monkeypatch)
+    _, small, _ = run(repo, "ask", "show", "--ask", created["ask_id"], "--minimal", monkeypatch=monkeypatch)
+    assert set(small) < set(full)
+    assert ledger.read_bytes() == before
 
 
 def test_minimal_leaves_a_text_result_as_text(repo, monkeypatch):
@@ -426,11 +420,13 @@ def test_minimal_leaves_a_text_result_as_text(repo, monkeypatch):
 
 
 def test_every_projection_emits_exactly_its_spec_keys(repo, monkeypatch, tmp_path):
-    """One pass through Ask, Eval and Seal under --minimal, asserting each command's key set.
+    """One pass through Ask, Eval and Seal using conversation responses.
 
     These are the fields the skills read; anything else is provenance the ledger already holds."""
     def m(*args, stdin=None):
-        code, out, _ = run(repo, *args, "--minimal", stdin=stdin, monkeypatch=monkeypatch)
+        fetches = {("deltas", "domains"), ("ask", "show"), ("ask", "list"), ("eval", "list"), ("seal", "check")}
+        flags = ["--minimal"] if args[:2] in fetches else []
+        code, out, _ = run(repo, *args, *flags, stdin=stdin, monkeypatch=monkeypatch)
         assert code == 0, (args, out)
         return out
 
@@ -443,20 +439,21 @@ def test_every_projection_emits_exactly_its_spec_keys(repo, monkeypatch, tmp_pat
     assert set(m("ask", "confirm", "--ask", a)) == {"ask_id", "confirmation"}
     assert set(m("ask", "show", "--ask", a)) == {"ask_id", "title", "state", "capability", "prompt_path", "source_verified"}
     assert set(m("ask", "list")["asks"][0]) == {"ask_id", "title", "state", "capability"}
-    assert set(m("ask", "submitted", "--ask", a)) <= {"ask_id", "state"}
+    assert set(m("ask", "submitted", "--ask", a)) <= {"ask_id", "state", "as_modified"}
     assert set(m("ask", "delivery", "--ask", a, "--state", "unavailable", "--reason", "no tool")) <= {"ask_id", "mode", "state"}
 
     cancelled = m("ask", "compile", "--staged", staged(repo, "k2"), "--title", "Later", "--capability", "native_plan",
                   "--classification", CLS, "--route", ROUTE, "--host", host("k2"))["ask_id"]
-    assert set(m("ask", "cancel", "--ask", cancelled, "--reason", "not now")) <= {"ask_id", "state"}
+    assert set(m("ask", "cancel", "--ask", cancelled, "--reason", "not now")) == {"ask_id", "state"}
 
     commit(repo, {"api.py": "def uptime(): return 1\n"})
     opened = m("eval", "open")
-    assert set(opened) == {"eval_id", "brief_path", "changes", "anchor", "subject"}
+    assert set(opened) == {"eval_id", "brief_path", "brief", "changes", "anchor", "subject"}
     assert isinstance(opened["anchor"], str) and isinstance(opened["subject"], str)
-    # the brief digest is provenance, deliberately absent from the minimal view; read it from disk
+    # The brief digest is an input to each judge, so the action response retains it.
     import hashlib
-    sha_b = hashlib.sha256((repo / ".fab7/rf/evals" / opened["eval_id"] / "brief.json").read_bytes()).hexdigest()
+    sha_b = opened["brief"]["sha256"]
+    assert sha_b == hashlib.sha256((repo / ".fab7/rf/evals" / opened["eval_id"] / "brief.json").read_bytes()).hexdigest()
     items = [{"id": "i1", "text": "Expose an uptime endpoint", "ask_id": a, "status": "active"}]
     (tmp_path / "intent.json").write_text(json.dumps(intent(sha_b, items)))
     files = []
@@ -464,9 +461,9 @@ def test_every_projection_emits_exactly_its_spec_keys(repo, monkeypatch, tmp_pat
         f = tmp_path / f"j{n}.json"; f.write_text(json.dumps(judgement(sha_b, ang, {"i1": "yes"}, {"api.py": "required"})))
         files += ["--judgement", f"@{f}"]
     closed = m("eval", "close", "--eval", opened["eval_id"], "--intent", f"@{tmp_path / 'intent.json'}", *files)
-    assert set(closed) == {"eval_id", "verdict", "confidence"}
-    assert set(m("eval", "list")["evals"][0]) <= {"eval_id", "verdict", "confidence", "state"}
+    assert set(closed) == {"eval_id", "verdict", "confidence", "items", "drift", "delta", "limitations", "basis"}
+    assert set(m("eval", "list")["evals"][0]) <= {"eval_id", "verdict", "confidence", "state", "basis"}
 
     sealed = m("seal", "create", "--disposition", "accepted")
-    assert set(sealed) == {"seal_id", "disposition"}
-    assert set(m("seal", "check", "--seal", sealed["seal_id"])) == {"seal_id", "fresh", "subject_matches"}
+    assert set(sealed) == {"seal_id", "disposition", "receipt_path", "asks", "eval", "limitations"}
+    assert set(m("seal", "check", "--seal", sealed["seal_id"])) == {"seal_id", "fresh", "subject_matches", "codes"}
